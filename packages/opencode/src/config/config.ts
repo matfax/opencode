@@ -1,5 +1,6 @@
 import { Log } from "../util/log"
 import path from "path"
+import { Template } from "../util/template"
 import os from "os"
 import z from "zod/v4"
 import { Filesystem } from "../util/filesystem"
@@ -12,7 +13,8 @@ import { NamedError } from "../util/error"
 import matter from "gray-matter"
 import { Flag } from "../flag/flag"
 import { Auth } from "../auth"
-import { type ParseError as JsoncParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser"
+// JSONC parsing & validation delegated to Template.processConfig
+// import { type ParseError as JsoncParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser"
 import { Instance } from "../project/instance"
 
 export namespace Config {
@@ -556,43 +558,8 @@ export namespace Config {
   }
 
   async function load(text: string, configFilepath: string) {
-    text = text.replace(/\{env:([^}]+)\}/g, (_, varName) => {
-      return process.env[varName] || ""
-    })
-
-    const fileMatches = text.match(/\{file:[^}]+\}/g)
-    if (fileMatches) {
-      const configDir = path.dirname(configFilepath)
-      const lines = text.split("\n")
-
-      for (const match of fileMatches) {
-        const lineIndex = lines.findIndex((line) => line.includes(match))
-        if (lineIndex !== -1 && lines[lineIndex].trim().startsWith("//")) {
-          continue // Skip if line is commented
-        }
-        let filePath = match.replace(/^\{file:/, "").replace(/\}$/, "")
-        if (filePath.startsWith("~/")) {
-          filePath = path.join(os.homedir(), filePath.slice(2))
-        }
-        const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(configDir, filePath)
-        const fileContent = (
-          await Bun.file(resolvedPath)
-            .text()
-            .catch((error) => {
-              const errMsg = `bad file reference: "${match}"`
-              if (error.code === "ENOENT") {
-                throw new InvalidError(
-                  { path: configFilepath, message: errMsg + ` ${resolvedPath} does not exist` },
-                  { cause: error },
-                )
-              }
-              throw new InvalidError({ path: configFilepath, message: errMsg }, { cause: error })
-            })
-        ).trim()
-        // escape newlines/quotes, strip outer quotes
-        text = text.replace(match, JSON.stringify(fileContent).slice(1, -1))
-      }
-    }
+    // Centralized substitution for environment and file placeholders
+    text = await Template.substitute(text, path.dirname(configFilepath))
 
     const errors: JsoncParseError[] = []
     const data = parseJsonc(text, errors, { allowTrailingComma: true })

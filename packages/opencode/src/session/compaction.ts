@@ -13,6 +13,11 @@ import { SessionPrompt } from "./prompt"
 import { Flag } from "../flag/flag"
 import { Token } from "../util/token"
 import { Log } from "../util/log"
+import { Agent } from "../agent/agent"
+import { Template } from "../util/template"
+// Statically import the compact template (raw text)
+// @ts-ignore: allow importing .txt as raw string
+import COMPACT_TEMPLATE from "./prompt/compact.txt"
 
 export namespace SessionCompaction {
   const log = Log.create({ service: "session.compaction" })
@@ -91,10 +96,22 @@ export namespace SessionCompaction {
         draft.time.compacting = undefined
       })
     })
-    const toSummarize = await Session.messages(input.sessionID).then(MessageV2.filterSummarized)
-    const model = await Provider.getModel(input.providerID, input.modelID)
+    // Retrieve messages and apply V2 filtering for summaries
+    const allMsgs = await Session.messages(input.sessionID).then(MessageV2.filterSummarized)
+    const agentConfig = await Agent.get("compact")
+    const rootModel = await Provider.getModel(input.providerID, input.modelID)
+    const useModel = agentConfig?.model
+      ? await Provider.getModel(agentConfig.model.providerID, agentConfig.model.modelID)
+      : rootModel
+    const bufferCount = agentConfig?.options?.buffer ?? 3
+    const lastSummaryIdx = allMsgs.findLastIndex(m => m.info.role === 'assistant' && !!m.info.summary)
+    const newMsgs = lastSummaryIdx === -1 ? allMsgs.slice() : allMsgs.slice(lastSummaryIdx + 1)
+    const toSummarize = bufferCount > 0
+      ? newMsgs.slice(0, Math.max(0, newMsgs.length - bufferCount))
+      : newMsgs
+    // Build system context once and reuse for message + LLM call
     const system = [
-      ...SystemPrompt.summarize(model.providerID),
+      ...SystemPrompt.summarize(useModel.providerID),
       ...(await SystemPrompt.environment()),
       ...(await SystemPrompt.custom()),
     ]
@@ -117,36 +134,30 @@ export namespace SessionCompaction {
         cache: { read: 0, write: 0 },
       },
       modelID: input.modelID,
-      providerID: model.providerID,
+      providerID: rootModel.providerID,
       time: {
         created: Date.now(),
       },
     })) as MessageV2.Assistant
+    // Inline compaction logic: load agent config & template
+    // Load and substitute env/file placeholders in static template
+    const rawTmpl = agentConfig.prompt
+      ? await Template.load(agentConfig.prompt)
+      : await Template.substitute(COMPACT_TEMPLATE)
+  const convMsgs: ModelMessage[] = MessageV2.toModelMessage(toSummarize)
+    // Build final messages: system context, conversation, then user instructions
+    const systemMsgs: ModelMessage[] = system.map(text => ({ role: "system", content: text }))
+    const userMsg: ModelMessage = { role: "user", content: rawTmpl }
+    // Invoke LLM for compaction with retries and temperature=0
     const generated = await generateText({
       maxRetries: 10,
-      model: model.language,
-      messages: [
-        ...system.map(
-          (x): ModelMessage => ({
-            role: "system",
-            content: x,
-          }),
-        ),
-        ...MessageV2.toModelMessage(toSummarize),
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Provide a detailed but concise summary of our conversation above. Focus on information that would be helpful for continuing the conversation, including what we did, what we're doing, which files we're working on, and what we're going to do next.",
-            },
-          ],
-        },
-      ],
+      model: useModel.language,
+      temperature: 0,
+      messages: [...systemMsgs, ...convMsgs, userMsg],
     })
-    const usage = Session.getUsage(model.info, generated.usage, generated.providerMetadata)
-    msg.cost += usage.cost
-    msg.tokens = usage.tokens
+    const usageRes = Session.getUsage(useModel.info, generated.usage, generated.providerMetadata)
+    msg.cost += usageRes.cost
+    msg.tokens = usageRes.tokens
     msg.summary = true
     msg.time.completed = Date.now()
     await Session.updateMessage(msg)
@@ -156,10 +167,7 @@ export namespace SessionCompaction {
       messageID: msg.id,
       id: Identifier.ascending("part"),
       text: generated.text,
-      time: {
-        start: Date.now(),
-        end: Date.now(),
-      },
+      time: { start: Date.now(), end: Date.now() },
     })
 
     Bus.publish(Event.Compacted, {

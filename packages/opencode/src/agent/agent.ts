@@ -12,7 +12,7 @@ export namespace Agent {
     .object({
       name: z.string(),
       description: z.string().optional(),
-      mode: z.union([z.literal("subagent"), z.literal("primary"), z.literal("all")]),
+      mode: z.union([z.literal("subagent"), z.literal("primary"), z.literal("all"), z.literal("support")]),
       builtIn: z.boolean(),
       topP: z.number().optional(),
       temperature: z.number().optional(),
@@ -29,7 +29,10 @@ export namespace Agent {
         .optional(),
       prompt: z.string().optional(),
       tools: z.record(z.string(), z.boolean()),
-      options: z.record(z.string(), z.any()),
+      // support agent-specific options (e.g., compaction buffer)
+      options: z.object({
+        buffer: z.number().optional(),
+      }).catchall(z.any()),
     })
     .meta({
       ref: "Agent",
@@ -88,6 +91,18 @@ export namespace Agent {
           ...defaultTools,
         },
         mode: "primary",
+        builtIn: true,
+      },
+      compact: {
+        name: "compact",
+        description: "Specialized agent for compressing and summarizing content",
+        prompt: "",
+        tools: {},
+        options: {
+          buffer: 3,
+        },
+        permission: agentPermission,
+        mode: "support",
         builtIn: true,
       },
     }
