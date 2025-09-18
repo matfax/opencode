@@ -246,14 +246,28 @@ export namespace Provider {
     // load env
     for (const [providerID, provider] of Object.entries(database)) {
       if (disabled.has(providerID)) continue
-      const apiKey = provider.env.map((item) => process.env[item]).at(0)
+      
+      // Try provider-specific env vars first; require exactly one to avoid ambiguity
+      const present = provider.env
+        .map((key) => process.env[key])
+        .filter((v): v is string => !!v)
+
+      let apiKey: string | undefined
+      if (present.length === 1) {
+        apiKey = present[0]
+      } else if (present.length === 0) {
+        // Universal fallback: try {PROVIDER_ID}_API_KEY for any provider
+        const universalKey = `${providerID.toUpperCase()}_API_KEY`
+        const universal = process.env[universalKey]
+        if (universal) apiKey = universal
+      } else {
+        // Multiple specific env vars set — ambiguous, skip to avoid choosing wrong key
+        log.warn("ambiguous provider env vars; skipping apiKey from env", { providerID, env: provider.env })
+      }
+
       if (!apiKey) continue
-      mergeProvider(
-        providerID,
-        // only include apiKey if there's only one potential option
-        provider.env.length === 1 ? { apiKey } : {},
-        "env",
-      )
+
+      mergeProvider(providerID, { apiKey }, "env")
     }
 
     // load apikeys
