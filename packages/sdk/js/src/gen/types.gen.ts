@@ -243,7 +243,7 @@ export type AgentConfig = {
         [key: string]: boolean
       }
     | boolean
-  | ("subagent" | "primary" | "all" | "support")
+    | ("subagent" | "primary" | "all" | "support")
     | {
         edit?: "ask" | "allow" | "deny"
         bash?:
