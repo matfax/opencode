@@ -17,7 +17,7 @@ Guidelines:
 Code Output Format: {input:format}
 
 Antipatterns to avoid:
-- DO NOT leave comment traces for removed code
+- DO NOT leave comment traces for removed code or for highlighting your progress
 - DO NOT edit sections of code irrelevant to the instructions
 - DO NOT create duplicate code
 - DO NOT add emojis unless explicitly requested
