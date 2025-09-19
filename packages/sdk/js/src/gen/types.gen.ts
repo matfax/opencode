@@ -225,7 +225,7 @@ export type AgentConfig = {
    * Description of when to use the agent
    */
   description?: string
-  mode?: "subagent" | "primary" | "all"
+  mode?: "subagent" | "primary" | "all" | "support"
   permission?: {
     edit?: "ask" | "allow" | "deny"
     bash?:
@@ -243,7 +243,7 @@ export type AgentConfig = {
         [key: string]: boolean
       }
     | boolean
-    | ("subagent" | "primary" | "all")
+  | ("subagent" | "primary" | "all" | "support")
     | {
         edit?: "ask" | "allow" | "deny"
         bash?:
@@ -964,7 +964,7 @@ export type File = {
 export type Agent = {
   name: string
   description?: string
-  mode: "subagent" | "primary" | "all"
+  mode: "subagent" | "primary" | "all" | "support"
   builtIn: boolean
   topP?: number
   temperature?: number
