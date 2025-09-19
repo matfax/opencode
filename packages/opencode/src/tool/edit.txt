@@ -3,9 +3,8 @@ Facilitates N number of modifications to a single file using natural language in
 Usage:
 - This only supports content edits to a single file, no file operations (create, delete, rename, move)
 - Provide editing instructions in natural language describing what changes to make
-- Optionally provide a list of relevant files for context to understand how edits should integrate with the broader codebase
+- Optionally accepts a list of relevant files for context to understand how edits should integrate with the broader codebase
 - The file to be edited will always be read automatically and doesn't need to be explicitly provided
 - For simple changes, you can mention relevant integration references directly in the instructions to keep things concise
 - For complex changes involving multiple files or intricate dependencies, provide the relevant file list for better context
-- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
-- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
+- When using this tool, act in a mid-level planner role, like a senior developer, outlining crucial steps, requirements and references

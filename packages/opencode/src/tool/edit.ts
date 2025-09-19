@@ -6,9 +6,6 @@
 import z from "zod/v4"
 import * as path from "path"
 import { Tool } from "./tool"
-import { LSP } from "../lsp"
-import { createTwoFilesPatch } from "diff"
-import { Permission } from "../permission"
 import * as DESCRIPTION from "./edit.txt"
 // Statically import template + examples
 // @ts-ignore
@@ -17,8 +14,6 @@ import EDIT_TEMPLATE from "./support/edit.txt"
 import SNIPPET_EXAMPLE from "./support/snippet.txt"
 // @ts-ignore
 import DIFF_EXAMPLE from "./support/diff.txt"
-import { File } from "../file"
-import { Bus } from "../bus"
 import { FileTime } from "../file/time"
 import { Filesystem } from "../util/filesystem"
 import { Instance } from "../project/instance"
@@ -27,10 +22,10 @@ import { Provider } from "../provider/provider"
 import { Template } from "../util/template"
 import { generateText } from "ai"
 // Shared apply & utility functions
-import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite } from "./common/apply"
-import { extractCodeFromMarkdown } from "./common/utils"
+import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite } from "../util/apply"
+import { extractCodeFromMarkdown } from "../util/markdown"
 // Re-export replace for existing tests that import from this module
-export { replace } from "./common/apply"
+export { replace } from "../util/apply"
 
 // Bun runtime type declaration
 declare const Bun: any

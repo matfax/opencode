@@ -1,0 +1,29 @@
+[You should still bias towards repeating as few lines of the original file as possible to convey the change]
+[But, each edit should contain minimally sufficient context of unchanged lines around the code you're editing to resolve ambiguity]
+[DO NOT omit spans of pre-existing code (or comments) without using the // ... existing code ... comment to indicate its absence. If you omit the existing code comment, the model may inadvertently delete these lines]
+
+<<<file:packages/opencode/src/user/process.ts action:create>>>
+export function processUser(user: User) {
+  return { id: user.id, name: user.name }
+}
+
+<<<file:packages/opencode/src/util/math.ts action:modify>>>
+// delete calculateTotal function
+
+// ... existing code ...
+
+// renamed calculateAverageRating
+// This function calculates the average rating
+function calculateAverageRatingFinal(reviews) {
+  // ... existing code ...
+  
+  const finalAverage = sum / reviews.length;
+  return Number(finalAverage.toFixed(1));
+}
+
+// ... keep rest of code ...
+
+<<<file:packages/opencode/src/legacy/old.ts action:delete>>>
+
+<<<file:packages/opencode/src/models/oldName.ts action:rename to:packages/opencode/src/models/newName.ts>>>
+export const status = "active"

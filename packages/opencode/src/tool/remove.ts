@@ -8,7 +8,7 @@ import { FileTime } from "../file/time"
 import { Agent } from "../agent/agent"
 import { Permission } from "../permission"
 import { createTwoFilesPatch } from "diff"
-import { trimDiff } from "./common/apply"
+import { trimDiff } from "../util/apply"
 
 declare const Bun: any
 

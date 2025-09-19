@@ -1,0 +1,17 @@
+<<<file:packages/opencode/src/user/process.ts action:modify>>>
+ function processUser(user: User) {
+-  return user
++  return { id: user.id, name: user.name }
+ }
+
+<<<file:packages/opencode/src/util/math.ts action:create>>>
++export function sum(a: number, b: number) {
++  return a + b
++}
+
+<<<file:packages/opencode/src/legacy/old.ts action:delete>>>
+-export const obsolete = true
+
+<<<file:packages/opencode/src/models/oldName.ts action:rename to:packages/opencode/src/models/newName.ts>>>
+-export const status = "old"
++export const status = "active"

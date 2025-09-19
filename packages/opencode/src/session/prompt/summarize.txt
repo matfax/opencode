@@ -13,5 +13,6 @@ Guidelines:
 - Avoid redundant explanations, introductions, or conclusions
 - Keep track of the requirements/goals and their fulfillment status
 - When code/files have been modified after reading, omit the outdated code
+- Prioritize user instructions that the user seems to care about
 
 Provide a concise but thorough summary of the changes and operation results.
