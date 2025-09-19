@@ -11,6 +11,7 @@ import { TodoWriteTool, TodoReadTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
 import { InvalidTool } from "./invalid"
+import { SymbolTool } from "./symbol"
 import type { Agent } from "../agent/agent"
 import { Tool } from "./tool"
 
@@ -30,6 +31,7 @@ export namespace ToolRegistry {
     TodoWriteTool,
     TodoReadTool,
     TaskTool,
+    SymbolTool,
   ]
 
   // Extra tools registered at runtime (via plugins)

@@ -225,14 +225,18 @@ export namespace LSP {
     SymbolKind.Enum,
   ]
 
-  export async function workspaceSymbol(query: string) {
+  export async function workspaceSymbol(query: string, limit?: number) {
     return run((client) =>
       client.connection
         .sendRequest("workspace/symbol", {
           query,
         })
         .then((result: any) => result.filter((x: LSP.Symbol) => kinds.includes(x.kind)))
-        .then((result: any) => result.slice(0, 10))
+        .then((result: any) => {
+          if (limit === undefined) return result.slice(0, 10)
+            if (limit === 0) return result
+            return result.slice(0, limit)
+        })
         .catch(() => []),
     ).then((result) => result.flat() as LSP.Symbol[])
   }
