@@ -259,7 +259,7 @@ export namespace Config {
       tools: z.record(z.string(), z.boolean()).optional(),
       disable: z.boolean().optional(),
       description: z.string().optional().describe("Description of when to use the agent"),
-      mode: z.union([z.literal("subagent"), z.literal("primary"), z.literal("all")]).optional(),
+      mode: z.union([z.literal("subagent"), z.literal("primary"), z.literal("all"), z.literal("support")]).optional(),
       permission: z
         .object({
           edit: Permission.optional(),
