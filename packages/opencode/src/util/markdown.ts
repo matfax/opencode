@@ -26,10 +26,10 @@ export function extractCodeFromMarkdown(text: string): string {
 
   // Full-document single fence without trailing newline before closing (edge case)
   if (/^(?:```|'''|""\")(?:[a-zA-Z0-9_-]+)?\s*\n[\s\S]*?(?:```|'''|""\")$/.test(normalized)) {
-    const lines = normalized.split('\n')
+    const lines = normalized.split("\n")
     lines.shift()
     lines.pop()
-    return lines.join('\n')
+    return lines.join("\n")
   }
 
   return normalized

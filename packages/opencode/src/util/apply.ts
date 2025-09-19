@@ -53,10 +53,10 @@ export function trimDiff(diff: string): string {
 export async function handleDiagnosticsAndFileWrite(filePath: string, contentNew: string, ctx: any) {
   await LSP.touchFile(filePath, true)
   const diagnostics = await LSP.diagnostics()
-  
+
   // Check for errors in the target file
   const fileErrors = diagnostics[filePath]?.filter((item) => item.severity === 1) || []
-  
+
   if (fileErrors.length > 0) {
     const errorMessage = `File has errors after edit:\n${fileErrors.map(LSP.Diagnostic.pretty).join("\n")}`
     throw new Error(errorMessage)
@@ -74,9 +74,14 @@ export async function handleDiagnosticsAndFileWrite(filePath: string, contentNew
 
 export { replace }
 
-
 // Apply edit output using apply agent
-export async function applyEditOutput(editOutput: string, summary: string, ctx: any, filePath: string, contentOld: string) {
+export async function applyEditOutput(
+  editOutput: string,
+  summary: string,
+  ctx: any,
+  filePath: string,
+  contentOld: string,
+) {
   const agent = await Agent.get(ctx.agent)
   const applyAgent = await Agent.get("apply")
   // Silent fallback if no apply agent or model
@@ -99,15 +104,15 @@ export async function applyEditOutput(editOutput: string, summary: string, ctx: 
       model: modelInfo.language,
       temperature: 0,
       maxRetries: 5,
-      messages: [ { role: "user", content: applyMsg } ],
+      messages: [{ role: "user", content: applyMsg }],
     })
     contentNew = extractCodeFromMarkdown(gen.text)
   } else if (modelInfo.providerID === "relace" && modelInfo.modelID === "relace-apply") {
     // relace apply endpoint expects initialCode + editSnippet JSON; treat editOutput as snippet
     try {
-  const endpoint = (modelInfo.info.options && (modelInfo.info.options as any)["endpoint"]) || "/v1/code/apply"
-  const providerApi = (modelInfo.info as any).provider && (modelInfo.info as any).provider.api
-  const base = providerApi || (modelInfo.info.options && (modelInfo.info.options as any)["baseURL"]) || ""
+      const endpoint = (modelInfo.info.options && (modelInfo.info.options as any)["endpoint"]) || "/v1/code/apply"
+      const providerApi = (modelInfo.info as any).provider && (modelInfo.info as any).provider.api
+      const base = providerApi || (modelInfo.info.options && (modelInfo.info.options as any)["baseURL"]) || ""
       const url = base.endsWith("/") ? base.slice(0, -1) + endpoint : base + endpoint
       const resp = await fetch(url, {
         method: "POST",
@@ -142,7 +147,7 @@ export async function applyEditOutput(editOutput: string, summary: string, ctx: 
 
   // Create diff for permission check
   const diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
-  
+
   if (agent.permission.edit === "ask") {
     await Permission.ask({
       type: "edit",
@@ -164,58 +169,68 @@ export async function applyEditOutput(editOutput: string, summary: string, ctx: 
 export function parseFuzzyDiff(output: string): { oldString: string; newString: string } {
   // First extract code from markdown if present
   const extractedOutput = extractCodeFromMarkdown(output)
-  const lines = extractedOutput.split('\n')
+  const lines = extractedOutput.split("\n")
   let oldString = ""
   let newString = ""
-  
+
   // Try multiple patterns to extract old and new code sections
-  
+
   // Pattern 1: Look for unified diff format
-  if (extractedOutput.includes('@@') && (extractedOutput.includes('-') || extractedOutput.includes('+'))) {
+  if (extractedOutput.includes("@@") && (extractedOutput.includes("-") || extractedOutput.includes("+"))) {
     for (const line of lines) {
-      if (line.startsWith('-') && !line.startsWith('---')) {
-        oldString += line.substring(1) + '\n'
-      } else if (line.startsWith('+') && !line.startsWith('+++')) {
-        newString += line.substring(1) + '\n'
+      if (line.startsWith("-") && !line.startsWith("---")) {
+        oldString += line.substring(1) + "\n"
+      } else if (line.startsWith("+") && !line.startsWith("+++")) {
+        newString += line.substring(1) + "\n"
       }
     }
   }
-  
+
   // Pattern 2: Look for explicit old/new sections
   if (!oldString || !newString) {
     let inOld = false
     let inNew = false
-    
+
     for (const line of lines) {
       const trimmed = line.trim().toLowerCase()
-      
-      if (trimmed.includes('old:') || trimmed.includes('replace:') || trimmed.includes('before:') || trimmed.includes('from:')) {
+
+      if (
+        trimmed.includes("old:") ||
+        trimmed.includes("replace:") ||
+        trimmed.includes("before:") ||
+        trimmed.includes("from:")
+      ) {
         inOld = true
         inNew = false
         continue
       }
-      if (trimmed.includes('new:') || trimmed.includes('with:') || trimmed.includes('after:') || trimmed.includes('to:')) {
+      if (
+        trimmed.includes("new:") ||
+        trimmed.includes("with:") ||
+        trimmed.includes("after:") ||
+        trimmed.includes("to:")
+      ) {
         inOld = false
         inNew = true
         continue
       }
-      
-      if (inOld && !trimmed.startsWith('##') && !trimmed.includes(':')) {
-        oldString += line + '\n'
-      } else if (inNew && !trimmed.startsWith('##') && !trimmed.includes(':')) {
-        newString += line + '\n'
+
+      if (inOld && !trimmed.startsWith("##") && !trimmed.includes(":")) {
+        oldString += line + "\n"
+      } else if (inNew && !trimmed.startsWith("##") && !trimmed.includes(":")) {
+        newString += line + "\n"
       }
     }
   }
-  
+
   // Pattern 3: Look for code blocks with context
   if (!oldString || !newString) {
     const codeBlocks = []
     let inCodeBlock = false
     let currentBlock = ""
-    
+
     for (const line of lines) {
-      if (line.trim().startsWith('```')) {
+      if (line.trim().startsWith("```")) {
         if (inCodeBlock) {
           codeBlocks.push(currentBlock.trim())
           currentBlock = ""
@@ -225,38 +240,38 @@ export function parseFuzzyDiff(output: string): { oldString: string; newString: 
         }
         continue
       }
-      
+
       if (inCodeBlock) {
-        currentBlock += line + '\n'
+        currentBlock += line + "\n"
       }
     }
-    
+
     // If we have exactly 2 code blocks, assume first is old, second is new
     if (codeBlocks.length === 2) {
       oldString = codeBlocks[0]
       newString = codeBlocks[1]
     }
   }
-  
+
   return {
     oldString: oldString.trim(),
-    newString: newString.trim()
+    newString: newString.trim(),
   }
 }
 
 // Apply a diff to content to get the modified content
 export function applyDiffToContent(originalContent: string, diff: string): string {
-  const lines = originalContent.split('\n')
-  const diffLines = diff.split('\n')
-  
+  const lines = originalContent.split("\n")
+  const diffLines = diff.split("\n")
+
   // Simple diff application - handles basic unified diff format
   let result = [...lines]
   let lineOffset = 0
-  
+
   for (let i = 0; i < diffLines.length; i++) {
     const line = diffLines[i]
-    
-    if (line.startsWith('@@')) {
+
+    if (line.startsWith("@@")) {
       // Parse hunk header to get line numbers
       const match = line.match(/@@ -(\d+),?\d* \+(\d+),?\d* @@/)
       if (match) {
@@ -264,8 +279,8 @@ export function applyDiffToContent(originalContent: string, diff: string): strin
       }
       continue
     }
-    
-    if (line.startsWith('-') && !line.startsWith('---')) {
+
+    if (line.startsWith("-") && !line.startsWith("---")) {
       // Remove line
       const lineContent = line.substring(1)
       const index = result.findIndex((l, idx) => idx >= lineOffset && l === lineContent)
@@ -273,42 +288,44 @@ export function applyDiffToContent(originalContent: string, diff: string): strin
         result.splice(index, 1)
         lineOffset = index
       }
-    } else if (line.startsWith('+') && !line.startsWith('+++')) {
+    } else if (line.startsWith("+") && !line.startsWith("+++")) {
       // Add line
       const lineContent = line.substring(1)
       result.splice(lineOffset, 0, lineContent)
       lineOffset++
-    } else if (line.startsWith(' ')) {
+    } else if (line.startsWith(" ")) {
       // Context line - advance offset
       lineOffset++
     }
   }
-  
-  return result.join('\n')
+
+  return result.join("\n")
 }
 
 // Use traditional diff method - edit output should be a proper diff
 export async function diffEditOutput(editOutput: string, ctx: any, filePath: string, contentOld: string) {
   const agent = await Agent.get(ctx.agent)
-  
+
   // Extract code from markdown code blocks if present
   const extractedCode = extractCodeFromMarkdown(editOutput)
   let diff = extractedCode.trim()
-  
+
   // If the diff doesn't look like a proper diff, try to parse it as fuzzy diff
-  if (!diff.includes('@@') && !(diff.includes('-') && diff.includes('+'))) {
+  if (!diff.includes("@@") && !(diff.includes("-") && diff.includes("+"))) {
     // Fallback to fuzzy parsing if the edit agent didn't output proper diff format
     const { oldString, newString } = parseFuzzyDiff(extractedCode)
-    
+
     if (!oldString || !newString) {
-      throw new Error("Edit agent output must be a proper diff format or contain identifiable old and new code sections")
+      throw new Error(
+        "Edit agent output must be a proper diff format or contain identifiable old and new code sections",
+      )
     }
-    
+
     // Use the sophisticated replace function with fuzzy matching
     const contentNew = replace(contentOld, oldString, newString, false)
     diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
   }
-  
+
   // For permission check, we need the actual modified content
   // Parse the diff to apply changes to get contentNew
   const contentNew = applyDiffToContent(contentOld, diff)

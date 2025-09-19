@@ -3,7 +3,7 @@ import { Tool } from "./tool"
 import * as path from "path"
 import DESCRIPTION from "./remove.txt"
 import { Filesystem } from "../util/filesystem"
-import { Instance } from "../project/instance" 
+import { Instance } from "../project/instance"
 import { FileTime } from "../file/time"
 import { Agent } from "../agent/agent"
 import { Permission } from "../permission"
@@ -15,7 +15,7 @@ declare const Bun: any
 export const RemoveTool = Tool.define("remove", {
   description: DESCRIPTION,
   parameters: z.object({
-    filePath: z.string().describe("Path to the file to remove")
+    filePath: z.string().describe("Path to the file to remove"),
   }),
   async execute(params, ctx) {
     if (!params.filePath) throw new Error("filePath required")
@@ -40,9 +40,15 @@ export const RemoveTool = Tool.define("remove", {
       })
     }
 
-    try { await (Filesystem as any).remove?.(abs) } catch { /* ignore */ }
-    try { await Bun.write(abs, "") } catch {}
+    try {
+      await (Filesystem as any).remove?.(abs)
+    } catch {
+      /* ignore */
+    }
+    try {
+      await Bun.write(abs, "")
+    } catch {}
     FileTime.read(ctx.sessionID, abs)
     return { title: path.relative(Instance.worktree, abs), metadata: { filePath: abs }, output: "File removed" }
-  }
+  },
 })

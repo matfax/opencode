@@ -32,50 +32,49 @@ declare const Bun: any
 
 // Parse edit agent output to extract report and code
 function parseEditOutput(output: string): { summary: string; code: string } {
-  const lines = output.split('\n')
+  const lines = output.split("\n")
   let reportStart = -1
   let codeStart = -1
-  
+
   // Find section markers (relaxed matching)
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim().toLowerCase()
-    if (line.includes('report') && (line.startsWith('#') || line.includes(':'))) {
+    if (line.includes("report") && (line.startsWith("#") || line.includes(":"))) {
       reportStart = i + 1
-    } else if (line.includes('code') && (line.startsWith('#') || line.includes(':'))) {
+    } else if (line.includes("code") && (line.startsWith("#") || line.includes(":"))) {
       codeStart = i + 1
       break
     }
   }
-  
+
   // Extract report
   let summary = ""
   if (reportStart > -1 && codeStart > -1) {
-    summary = lines.slice(reportStart, codeStart - 1)
-      .filter(line => !line.trim().startsWith('##'))
-      .join('\n')
+    summary = lines
+      .slice(reportStart, codeStart - 1)
+      .filter((line) => !line.trim().startsWith("##"))
+      .join("\n")
       .trim()
   }
-  
+
   // Extract code
   let code = ""
   if (codeStart > -1) {
-    code = lines.slice(codeStart)
-      .join('\n')
-      .trim()
-    
+    code = lines.slice(codeStart).join("\n").trim()
+
     // Extract code from markdown if wrapped in code blocks
     code = extractCodeFromMarkdown(code)
   }
-  
+
   // Fallback: if no structured format found, treat entire output as code
   if (!summary && !code) {
     const extractedCode = extractCodeFromMarkdown(output)
     return {
       summary: "Code modifications applied",
-      code: extractedCode
+      code: extractedCode,
     }
   }
-  
+
   return { summary, code }
 }
 
@@ -84,7 +83,12 @@ export const EditTool = Tool.define("edit", {
   parameters: z.object({
     filePath: z.string().describe("The absolute path to the file to modify"),
     instructions: z.string().describe("Natural language instructions describing what changes to make"),
-    relevantFiles: z.array(z.string()).optional().describe("Optional list of relevant files for context to understand how edits should integrate with the broader codebase"),
+    relevantFiles: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "Optional list of relevant files for context to understand how edits should integrate with the broader codebase",
+      ),
   }),
   async execute(params, ctx) {
     if (!params.filePath) {
@@ -108,7 +112,6 @@ export const EditTool = Tool.define("edit", {
     await FileTime.assert(ctx.sessionID, filePath)
     const contentOld = await file.text()
 
-
     // Resolve edit and apply agents and models
     const editAgent = await Agent.get("edit")
     // Silent fallback: if agent or model missing, just use default model
@@ -118,22 +121,22 @@ export const EditTool = Tool.define("edit", {
           const def = await Provider.defaultModel()
           return Provider.getModel(def.providerID, def.modelID)
         })()
-  const applyAgentForFormat = await Agent.get("apply")
-  const hasApplyModelForFormat = !!applyAgentForFormat?.model
-  const example = hasApplyModelForFormat ? SNIPPET_EXAMPLE : DIFF_EXAMPLE
+    const applyAgentForFormat = await Agent.get("apply")
+    const hasApplyModelForFormat = !!applyAgentForFormat?.model
+    const example = hasApplyModelForFormat ? SNIPPET_EXAMPLE : DIFF_EXAMPLE
     // Build system messages: keep any system lines from template after substitution
-    const substitutedTemplate = await Template.substituteInputs(
-      await Template.substitute(EDIT_TEMPLATE),
-      {
-        format: hasApplyModelForFormat ? Template.Format.Snippet : Template.Format.Diff,
-        example,
-      }
-    )
-    const systemLines = substitutedTemplate.split(/\n+/).filter(l => l.trim().length > 0)
-    const systemMsgs = systemLines.map(l => ({ role: "system" as const, content: l }))
+    const substitutedTemplate = await Template.substituteInputs(await Template.substitute(EDIT_TEMPLATE), {
+      format: hasApplyModelForFormat ? Template.Format.Snippet : Template.Format.Diff,
+      example,
+    })
+    const systemLines = substitutedTemplate.split(/\n+/).filter((l) => l.trim().length > 0)
+    const systemMsgs = systemLines.map((l) => ({ role: "system" as const, content: l }))
     // Build contextual messages for target + relevant files
     const fileMessages = [] as { role: "user"; content: string }[]
-    fileMessages.push({ role: "user", content: `// File: ${path.relative(Instance.directory, filePath)}\n${contentOld}` })
+    fileMessages.push({
+      role: "user",
+      content: `// File: ${path.relative(Instance.directory, filePath)}\n${contentOld}`,
+    })
     if (params.relevantFiles) {
       for (const rel of params.relevantFiles) {
         try {
@@ -158,7 +161,8 @@ export const EditTool = Tool.define("edit", {
     const { summary, code } = parseEditOutput(editOutput)
 
     // Detect rejection: empty or semantically empty code block
-    const isReject = !code || code.trim() === "" || /^\s*(?:\[?no\s*changes?]?|n\/a|null|undefined|#|\/\/|<!--).*$/i.test(code.trim())
+    const isReject =
+      !code || code.trim() === "" || /^\s*(?:\[?no\s*changes?]?|n\/a|null|undefined|#|\/\/|<!--).*$/i.test(code.trim())
     if (isReject) {
       return {
         metadata: { diagnostics: {}, diff: "" },
@@ -167,18 +171,18 @@ export const EditTool = Tool.define("edit", {
       }
     }
 
-  // Check if we have an apply agent configured with a model
-  const applyAgent = await Agent.get("apply")
-  const hasApplyModel = applyAgent?.model !== undefined
+    // Check if we have an apply agent configured with a model
+    const applyAgent = await Agent.get("apply")
+    const hasApplyModel = applyAgent?.model !== undefined
 
     // Apply the edit using the appropriate method
-    const result = hasApplyModel 
+    const result = hasApplyModel
       ? await applyEditOutput(code, summary, ctx, filePath, contentOld)
       : await diffEditOutput(code, ctx, filePath, contentOld)
-    
-  const contentNew = result.contentNew ?? contentOld
-  const { diagnostics } = await handleDiagnosticsAndFileWrite(filePath, contentNew, ctx)
-    
+
+    const contentNew = result.contentNew ?? contentOld
+    const { diagnostics } = await handleDiagnosticsAndFileWrite(filePath, contentNew, ctx)
+
     return {
       metadata: {
         diagnostics,
@@ -189,6 +193,3 @@ export const EditTool = Tool.define("edit", {
     }
   },
 })
-
-
-

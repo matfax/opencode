@@ -1,4 +1,14 @@
-import { SimpleReplacer, LineTrimmedReplacer, WhitespaceNormalizedReplacer, IndentationFlexibleReplacer, EscapeNormalizedReplacer, BlockAnchorReplacer, TrimmedBoundaryReplacer, ContextAwareReplacer, MultiOccurrenceReplacer } from "./replacer"
+import {
+  SimpleReplacer,
+  LineTrimmedReplacer,
+  WhitespaceNormalizedReplacer,
+  IndentationFlexibleReplacer,
+  EscapeNormalizedReplacer,
+  BlockAnchorReplacer,
+  TrimmedBoundaryReplacer,
+  ContextAwareReplacer,
+  MultiOccurrenceReplacer,
+} from "./replacer"
 
 export function replace(content: string, oldString: string, newString: string, replaceAll = false): string {
   if (oldString === newString) {

@@ -62,11 +62,7 @@ export namespace Template {
    * @param schema Zod schema to validate parsed data
    * @param configFilepath Path for error reporting
    */
-  export function processConfig<T>(
-    text: string,
-    schema: z.ZodType<T>,
-    configFilepath: string
-  ): T {
+  export function processConfig<T>(text: string, schema: z.ZodType<T>, configFilepath: string): T {
     const errors: JsoncParseError[] = []
     const data = parseJsonc(text, errors, { allowTrailingComma: true })
     if (errors.length) {
@@ -78,33 +74,26 @@ export namespace Template {
           const col = before[before.length - 1].length + 1
           const probLine = lines[line - 1] || ""
           const err = `${printParseErrorCode(e.error)} at line ${line}, column ${col}`
-          return probLine
-            ? `${err}\n  Line ${line}: ${probLine}\n${"".padStart(col + 5)}^`
-            : err
+          return probLine ? `${err}\n  Line ${line}: ${probLine}\n${"".padStart(col + 5)}^` : err
         })
         .join("\n")
       throw new Error(`Config JSONC error in ${configFilepath}:\n${detail}`)
     }
     const parsed = schema.safeParse(data)
     if (!parsed.success) {
-      const issues = parsed.error.issues
-        .map((i) => `${i.path.join(".")}: ${i.message}`)
-        .join("; ")
+      const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
       throw new Error(`Config validation error in ${configFilepath}: ${issues}`)
     }
     return parsed.data
   }
-  
+
   /**
    * Load, substitute, parse, validate, and post-process a config file.
    * Handles reading, {env:}/{file:} placeholders, JSONC, Zod, schema injection, and plugin resolution.
    * @param filepath Path to config file
    * @param schema Zod schema for validation
    */
-  export async function loadConfig(
-    filepath: string,
-    schema: z.ZodTypeAny
-  ): Promise<any> {
+  export async function loadConfig(filepath: string, schema: z.ZodTypeAny): Promise<any> {
     // Read file text, return empty config if missing
     let raw: string
     try {
@@ -139,9 +128,11 @@ export namespace Template {
    * Load and process template file with substitutions
    */
   export async function load(templatePath: string, basePath?: string): Promise<string> {
-    const resolvedPath = path.isAbsolute(templatePath) ? templatePath : path.resolve(basePath || Instance.directory, templatePath)
+    const resolvedPath = path.isAbsolute(templatePath)
+      ? templatePath
+      : path.resolve(basePath || Instance.directory, templatePath)
     const template = await Bun.file(resolvedPath).text()
-  return substitute(template, basePath)
+    return substitute(template, basePath)
   }
 
   /**
@@ -149,12 +140,12 @@ export namespace Template {
    */
   export async function substituteInputs(
     text: string,
-    inputs: Record<string, string | number | boolean | undefined>
+    inputs: Record<string, string | number | boolean | undefined>,
   ): Promise<string> {
     let result = text
     for (const [key, value] of Object.entries(inputs)) {
       const safeVal = value == null ? "" : String(value)
-      const pattern = new RegExp(`\\{input:${key}\\}`, 'g')
+      const pattern = new RegExp(`\\{input:${key}\\}`, "g")
       result = result.replace(pattern, safeVal)
     }
     return result

@@ -104,11 +104,9 @@ export namespace SessionCompaction {
       ? await Provider.getModel(agentConfig.model.providerID, agentConfig.model.modelID)
       : rootModel
     const bufferCount = agentConfig?.options?.buffer ?? 3
-    const lastSummaryIdx = allMsgs.findLastIndex(m => m.info.role === 'assistant' && !!m.info.summary)
+    const lastSummaryIdx = allMsgs.findLastIndex((m) => m.info.role === "assistant" && !!m.info.summary)
     const newMsgs = lastSummaryIdx === -1 ? allMsgs.slice() : allMsgs.slice(lastSummaryIdx + 1)
-    const toSummarize = bufferCount > 0
-      ? newMsgs.slice(0, Math.max(0, newMsgs.length - bufferCount))
-      : newMsgs
+    const toSummarize = bufferCount > 0 ? newMsgs.slice(0, Math.max(0, newMsgs.length - bufferCount)) : newMsgs
     // Build system context once and reuse for message + LLM call
     const system = [
       ...SystemPrompt.summarize(useModel.providerID),
@@ -144,9 +142,9 @@ export namespace SessionCompaction {
     const rawTmpl = agentConfig.prompt
       ? await Template.load(agentConfig.prompt)
       : await Template.substitute(COMPACT_TEMPLATE)
-  const convMsgs: ModelMessage[] = MessageV2.toModelMessage(toSummarize)
+    const convMsgs: ModelMessage[] = MessageV2.toModelMessage(toSummarize)
     // Build final messages: system context, conversation, then user instructions
-    const systemMsgs: ModelMessage[] = system.map(text => ({ role: "system", content: text }))
+    const systemMsgs: ModelMessage[] = system.map((text) => ({ role: "system", content: text }))
     const userMsg: ModelMessage = { role: "user", content: rawTmpl }
     // Invoke LLM for compaction with retries and temperature=0
     const generated = await generateText({

@@ -92,10 +92,7 @@ export const MultiEditTool = Tool.define("multiedit", {
       const editTool = await (await import("./edit")).EditTool.init()
       const results = []
       for (const e of params.edits) {
-        const r = await editTool.execute(
-          { filePath: e.filePath ?? params.filePath, instructions: e.instructions },
-          ctx,
-        )
+        const r = await editTool.execute({ filePath: e.filePath ?? params.filePath, instructions: e.instructions }, ctx)
         results.push(r)
       }
       return {
@@ -115,15 +112,15 @@ export const MultiEditTool = Tool.define("multiedit", {
     // System template reuse from single edit tool support examples
     // We keep it simple: instruct model to output angle sentinel sections
     const example = format === Template.Format.Snippet ? MULTISNIPPET_EXAMPLE : MULTIDIFF_EXAMPLE
-    const substituted = await Template.substituteInputs(
-      await Template.substitute(MULTIEDIT_TEMPLATE),
-      { format: format, example }
-    )
+    const substituted = await Template.substituteInputs(await Template.substitute(MULTIEDIT_TEMPLATE), {
+      format: format,
+      example,
+    })
     const systemLines = substituted
       .split(/\n+/)
-      .map(l => l.trim())
-      .filter(l => l.length > 0)
-    const systemMsgs = systemLines.map(l => ({ role: "system" as const, content: l }))
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0)
+    const systemMsgs = systemLines.map((l) => ({ role: "system" as const, content: l }))
 
     // Gather context files
     const ctxFiles: string[] = []
@@ -133,7 +130,8 @@ export const MultiEditTool = Tool.define("multiedit", {
       try {
         const abs = validatePath(rel)
         const content = await readFileIfExists(abs)
-        if (content != null) fileMessages.push({ role: "user", content: `// File: ${path.relative(Instance.directory, abs)}\n${content}` })
+        if (content != null)
+          fileMessages.push({ role: "user", content: `// File: ${path.relative(Instance.directory, abs)}\n${content}` })
       } catch {}
     }
     const finalUser = { role: "user" as const, content: `## Instructions\n${params.instructions}` }
@@ -169,8 +167,8 @@ export const MultiEditTool = Tool.define("multiedit", {
       return { title: "multiedit", metadata: { results: [] }, output: "No changes" }
     }
 
-  const results: any[] = []
-  const agent = await Agent.get(ctx.agent)
+    const results: any[] = []
+    const agent = await Agent.get(ctx.agent)
     for (const section of sections) {
       const relPath = section.file
       const absPath = validatePath(relPath)
@@ -181,9 +179,13 @@ export const MultiEditTool = Tool.define("multiedit", {
 
       if (action === "create") {
         if (existingContent != null) throw new Error(`File already exists: ${relPath}`)
-        const newContent = format === Template.Format.Snippet
-          ? section.body.join("\n").trimEnd()
-          : section.body.filter(l => l.startsWith("+")).map(l => l.slice(1)).join("\n")
+        const newContent =
+          format === Template.Format.Snippet
+            ? section.body.join("\n").trimEnd()
+            : section.body
+                .filter((l) => l.startsWith("+"))
+                .map((l) => l.slice(1))
+                .join("\n")
         const diff = trimDiff(createTwoFilesPatch(absPath, absPath, "", newContent))
         if (agent?.permission.edit === "ask") {
           await Permission.ask({
@@ -203,8 +205,8 @@ export const MultiEditTool = Tool.define("multiedit", {
         if (existingContent == null) throw new Error(`File not found for delete: ${relPath}`)
         const removeTool = await RemoveTool.init()
         const diff = trimDiff(createTwoFilesPatch(absPath, absPath, existingContent, ""))
-  await removeTool.execute({ filePath: absPath }, ctx)
-  results.push({ file: relPath, action, diff, diagnostics: {} })
+        await removeTool.execute({ filePath: absPath }, ctx)
+        results.push({ file: relPath, action, diff, diagnostics: {} })
         continue
       }
       if (action === "modify" || action === "rename") {

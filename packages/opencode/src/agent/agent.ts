@@ -30,9 +30,11 @@ export namespace Agent {
       prompt: z.string().optional(),
       tools: z.record(z.string(), z.boolean()),
       // support agent-specific options (e.g., compaction buffer)
-      options: z.object({
-        buffer: z.number().optional(),
-      }).catchall(z.any()),
+      options: z
+        .object({
+          buffer: z.number().optional(),
+        })
+        .catchall(z.any()),
     })
     .meta({
       ref: "Agent",

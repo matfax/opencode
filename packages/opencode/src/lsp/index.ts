@@ -234,8 +234,8 @@ export namespace LSP {
         .then((result: any) => result.filter((x: LSP.Symbol) => kinds.includes(x.kind)))
         .then((result: any) => {
           if (limit === undefined) return result.slice(0, 10)
-            if (limit === 0) return result
-            return result.slice(0, limit)
+          if (limit === 0) return result
+          return result.slice(0, limit)
         })
         .catch(() => []),
     ).then((result) => result.flat() as LSP.Symbol[])

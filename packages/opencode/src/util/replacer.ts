@@ -1,4 +1,3 @@
-
 // Import all the replacer functions and types from original edit.ts
 export type Replacer = (content: string, find: string) => Generator<string, void, unknown>
 

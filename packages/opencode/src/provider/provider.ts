@@ -258,11 +258,9 @@ export namespace Provider {
     // load env
     for (const [providerID, provider] of Object.entries(database)) {
       if (disabled.has(providerID)) continue
-      
+
       // Try provider-specific env vars first; require exactly one to avoid ambiguity
-      const present = provider.env
-        .map((key) => process.env[key])
-        .filter((v): v is string => !!v)
+      const present = provider.env.map((key) => process.env[key]).filter((v): v is string => !!v)
 
       let apiKey: string | undefined
       if (present.length === 1) {
@@ -348,7 +346,7 @@ export namespace Provider {
         format: "xml",
       },
     }
-    
+
     database["morph"].models["morph-v3-fast"] = {
       id: "morph-v3-fast",
       name: "Morph V3 Fast",

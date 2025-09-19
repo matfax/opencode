@@ -62,9 +62,7 @@ export const SymbolTool = Tool.define("symbol", {
         const slice = lines.slice(from, to + 1)
         let body: string
         if (args.numbering) {
-          body = slice
-            .map((ln, i) => `${(from + 1 + i).toString().padStart(5, "0")}| ${ln}`)
-            .join("\n")
+          body = slice.map((ln, i) => `${(from + 1 + i).toString().padStart(5, "0")}| ${ln}`).join("\n")
         } else {
           body = slice.join("\n")
         }
