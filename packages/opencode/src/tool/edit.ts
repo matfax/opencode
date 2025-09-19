@@ -9,29 +9,137 @@ import { Tool } from "./tool"
 import { LSP } from "../lsp"
 import { createTwoFilesPatch } from "diff"
 import { Permission } from "../permission"
-import DESCRIPTION from "./edit.txt"
+import * as DESCRIPTION from "./edit.txt"
+// Statically import template + examples
+// @ts-ignore
+import EDIT_TEMPLATE from "./support/edit.txt"
+// @ts-ignore
+import SNIPPET_EXAMPLE from "./support/snippet.txt"
+// @ts-ignore
+import DIFF_EXAMPLE from "./support/diff.txt"
 import { File } from "../file"
 import { Bus } from "../bus"
 import { FileTime } from "../file/time"
 import { Filesystem } from "../util/filesystem"
 import { Instance } from "../project/instance"
 import { Agent } from "../agent/agent"
+import { Provider } from "../provider/provider"
+import { Template } from "../util/template"
+import { generateText } from "ai"
+
+// Bun runtime type declaration
+declare const Bun: any
+
+// Extract code from markdown code blocks gracefully
+function extractCodeFromMarkdown(text: string): string {
+  const trimmed = text.trim()
+  
+  // Check for code blocks with language specifier
+  const codeBlockMatch = trimmed.match(/^```(?:\w+)?\s*\n([\s\S]*?)\n```$/m)
+  if (codeBlockMatch) {
+    return codeBlockMatch[1]
+  }
+  
+  // Check for code blocks without language specifier
+  const simpleCodeBlockMatch = trimmed.match(/^```\s*\n([\s\S]*?)\n```$/m)
+  if (simpleCodeBlockMatch) {
+    return simpleCodeBlockMatch[1]
+  }
+  
+  // Check for inline code blocks spanning the entire text
+  if (trimmed.startsWith('```') && trimmed.endsWith('```')) {
+    const lines = trimmed.split('\n')
+    // Remove first line (opening ```) and last line (closing ```)
+    if (lines.length >= 2) {
+      lines.shift()
+      lines.pop()
+      return lines.join('\n')
+    }
+  }
+  
+  // Check for multiple code blocks and extract the largest one
+  const allCodeBlocks = trimmed.match(/```(?:\w+)?\s*\n([\s\S]*?)\n```/g)
+  if (allCodeBlocks && allCodeBlocks.length > 0) {
+    // Extract content from each block and return the longest one
+    let longestBlock = ""
+    for (const block of allCodeBlocks) {
+      const content = block.replace(/^```(?:\w+)?\s*\n/, '').replace(/\n```$/, '')
+      if (content.length > longestBlock.length) {
+        longestBlock = content
+      }
+    }
+    if (longestBlock) {
+      return longestBlock
+    }
+  }
+  
+  // If no code blocks found, return the original text
+  return trimmed
+}
+
+// Parse edit agent output to extract report and code
+function parseEditOutput(output: string): { summary: string; code: string } {
+  const lines = output.split('\n')
+  let reportStart = -1
+  let codeStart = -1
+  
+  // Find section markers (relaxed matching)
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim().toLowerCase()
+    if (line.includes('report') && (line.startsWith('#') || line.includes(':'))) {
+      reportStart = i + 1
+    } else if (line.includes('code') && (line.startsWith('#') || line.includes(':'))) {
+      codeStart = i + 1
+      break
+    }
+  }
+  
+  // Extract report
+  let summary = ""
+  if (reportStart > -1 && codeStart > -1) {
+    summary = lines.slice(reportStart, codeStart - 1)
+      .filter(line => !line.trim().startsWith('##'))
+      .join('\n')
+      .trim()
+  }
+  
+  // Extract code
+  let code = ""
+  if (codeStart > -1) {
+    code = lines.slice(codeStart)
+      .join('\n')
+      .trim()
+    
+    // Extract code from markdown if wrapped in code blocks
+    code = extractCodeFromMarkdown(code)
+  }
+  
+  // Fallback: if no structured format found, treat entire output as code
+  if (!summary && !code) {
+    const extractedCode = extractCodeFromMarkdown(output)
+    return {
+      summary: "Code modifications applied",
+      code: extractedCode
+    }
+  }
+  
+  return { summary, code }
+}
 
 export const EditTool = Tool.define("edit", {
   description: DESCRIPTION,
   parameters: z.object({
     filePath: z.string().describe("The absolute path to the file to modify"),
-    oldString: z.string().describe("The text to replace"),
-    newString: z.string().describe("The text to replace it with (must be different from oldString)"),
-    replaceAll: z.boolean().optional().describe("Replace all occurrences of oldString (default false)"),
+    instructions: z.string().describe("Natural language instructions describing what changes to make"),
+    relevantFiles: z.array(z.string()).optional().describe("Optional list of relevant files for context to understand how edits should integrate with the broader codebase"),
   }),
   async execute(params, ctx) {
     if (!params.filePath) {
       throw new Error("filePath is required")
     }
 
-    if (params.oldString === params.newString) {
-      throw new Error("oldString and newString must be different")
+    if (!params.instructions || params.instructions.trim() === "") {
+      throw new Error("instructions are required")
     }
 
     const filePath = path.isAbsolute(params.filePath) ? params.filePath : path.join(Instance.directory, params.filePath)
@@ -39,92 +147,96 @@ export const EditTool = Tool.define("edit", {
       throw new Error(`File ${filePath} is not in the current working directory`)
     }
 
-    const agent = await Agent.get(ctx.agent)
-    let diff = ""
-    let contentOld = ""
-    let contentNew = ""
-    await (async () => {
-      if (params.oldString === "") {
-        contentNew = params.newString
-        diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
-        if (agent.permission.edit === "ask") {
-          await Permission.ask({
-            type: "edit",
-            sessionID: ctx.sessionID,
-            messageID: ctx.messageID,
-            callID: ctx.callID,
-            title: "Edit this file: " + filePath,
-            metadata: {
-              filePath,
-              diff,
-            },
-          })
-        }
-        await Bun.write(filePath, params.newString)
-        await Bus.publish(File.Event.Edited, {
-          file: filePath,
-        })
-        return
+    // Read the target file
+    const file = Bun.file(filePath)
+    const stats = await file.stat().catch(() => {})
+    if (!stats) throw new Error(`File ${filePath} not found`)
+    if (stats.isDirectory()) throw new Error(`Path is a directory, not a file: ${filePath}`)
+    await FileTime.assert(ctx.sessionID, filePath)
+    const contentOld = await file.text()
+
+
+    // Resolve edit and apply agents and models
+    const editAgent = await Agent.get("edit")
+    // Silent fallback: if agent or model missing, just use default model
+    const useModel = editAgent?.model
+      ? await Provider.getModel(editAgent.model.providerID, editAgent.model.modelID)
+      : await (async () => {
+          const def = await Provider.defaultModel()
+          return Provider.getModel(def.providerID, def.modelID)
+        })()
+  const applyAgentForFormat = await Agent.get("apply")
+  const hasApplyModelForFormat = !!applyAgentForFormat?.model
+  const example = hasApplyModelForFormat ? SNIPPET_EXAMPLE : DIFF_EXAMPLE
+    // Build system messages: keep any system lines from template after substitution
+    const substitutedTemplate = await Template.substituteInputs(
+      await Template.substitute(EDIT_TEMPLATE),
+      {
+        format: hasApplyModelForFormat ? Template.Format.Snippet : Template.Format.Diff,
+        example,
       }
-
-      const file = Bun.file(filePath)
-      const stats = await file.stat().catch(() => {})
-      if (!stats) throw new Error(`File ${filePath} not found`)
-      if (stats.isDirectory()) throw new Error(`Path is a directory, not a file: ${filePath}`)
-      await FileTime.assert(ctx.sessionID, filePath)
-      contentOld = await file.text()
-      contentNew = replace(contentOld, params.oldString, params.newString, params.replaceAll)
-
-      diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
-      if (agent.permission.edit === "ask") {
-        await Permission.ask({
-          type: "edit",
-          sessionID: ctx.sessionID,
-          messageID: ctx.messageID,
-          callID: ctx.callID,
-          title: "Edit this file: " + filePath,
-          metadata: {
-            filePath,
-            diff,
-          },
-        })
+    )
+    const systemLines = substitutedTemplate.split(/\n+/).filter(l => l.trim().length > 0)
+    const systemMsgs = systemLines.map(l => ({ role: "system" as const, content: l }))
+    // Build contextual messages for target + relevant files
+    const fileMessages = [] as { role: "user"; content: string }[]
+    fileMessages.push({ role: "user", content: `// File: ${path.relative(Instance.directory, filePath)}\n${contentOld}` })
+    if (params.relevantFiles) {
+      for (const rel of params.relevantFiles) {
+        try {
+          const abs = path.isAbsolute(rel) ? rel : path.join(Instance.directory, rel)
+          if (!Filesystem.contains(Instance.directory, abs)) continue
+          const c = await Bun.file(abs).text()
+          fileMessages.push({ role: "user", content: `// File: ${path.relative(Instance.directory, abs)}\n${c}` })
+        } catch {}
       }
+    }
+    // Final user message includes instructions last
+    const finalUser = { role: "user" as const, content: `## Instructions\n${params.instructions}` }
+    const editGen = await generateText({
+      model: useModel.language,
+      temperature: 0,
+      maxRetries: 5,
+      messages: [...systemMsgs, ...fileMessages, finalUser],
+    })
+    const editOutput = editGen.text
 
-      await file.write(contentNew)
-      await Bus.publish(File.Event.Edited, {
-        file: filePath,
-      })
-      contentNew = await file.text()
-      diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
-    })()
+    // Parse the edit output to extract summary and code
+    const { summary, code } = parseEditOutput(editOutput)
 
-    FileTime.read(ctx.sessionID, filePath)
-
-    let output = ""
-    await LSP.touchFile(filePath, true)
-    const diagnostics = await LSP.diagnostics()
-    for (const [file, issues] of Object.entries(diagnostics)) {
-      if (issues.length === 0) continue
-      if (file === filePath) {
-        output += `\nThis file has errors, please fix\n<file_diagnostics>\n${issues
-          .filter((item) => item.severity === 1)
-          .map(LSP.Diagnostic.pretty)
-          .join("\n")}\n</file_diagnostics>\n`
-        continue
+    // Detect rejection: empty or semantically empty code block
+    const isReject = !code || code.trim() === "" || /^\s*(?:\[?no\s*changes?]?|n\/a|null|undefined|#|\/\/|<!--).*$/i.test(code.trim())
+    if (isReject) {
+      return {
+        metadata: { diagnostics: {}, diff: "" },
+        title: `${path.relative(Instance.worktree, filePath)}`,
+        output: summary || "Edit rejected by model",
       }
     }
 
+  // Check if we have an apply agent configured with a model
+  const applyAgent = await Agent.get("apply")
+  const hasApplyModel = applyAgent?.model !== undefined
+
+    // Apply the edit using the appropriate method
+    const result = hasApplyModel 
+      ? await applyEditOutput(code, summary, ctx, filePath, contentOld)
+      : await diffEditOutput(code, ctx, filePath, contentOld)
+    
+    const { diagnostics } = await handleDiagnosticsAndFileWrite(filePath, result.contentNew, ctx)
+    
     return {
       metadata: {
         diagnostics,
-        diff,
+        diff: result.diff,
       },
       title: `${path.relative(Instance.worktree, filePath)}`,
-      output,
+      output: summary || "Edit applied successfully",
     }
   },
 })
 
+// Import all the replacer functions and types from original edit.ts
 export type Replacer = (content: string, find: string) => Generator<string, void, unknown>
 
 // Similarity thresholds for block anchor fallback matching
@@ -586,6 +698,29 @@ function trimDiff(diff: string): string {
   return trimmedLines.join("\n")
 }
 
+// Shared function to handle LSP diagnostics and file writing
+async function handleDiagnosticsAndFileWrite(filePath: string, contentNew: string, ctx: any) {
+  await LSP.touchFile(filePath, true)
+  const diagnostics = await LSP.diagnostics()
+  
+  // Check for errors in the target file
+  const fileErrors = diagnostics[filePath]?.filter((item) => item.severity === 1) || []
+  
+  if (fileErrors.length > 0) {
+    const errorMessage = `File has errors after edit:\n${fileErrors.map(LSP.Diagnostic.pretty).join("\n")}`
+    throw new Error(errorMessage)
+  }
+
+  // Write the modified content
+  await Bun.write(filePath, contentNew)
+  await Bus.publish(File.Event.Edited, {
+    file: filePath,
+  })
+  FileTime.read(ctx.sessionID, filePath)
+
+  return { diagnostics }
+}
+
 export function replace(content: string, oldString: string, newString: string, replaceAll = false): string {
   if (oldString === newString) {
     throw new Error("oldString and newString must be different")
@@ -604,7 +739,7 @@ export function replace(content: string, oldString: string, newString: string, r
     // ContextAwareReplacer,
     // MultiOccurrenceReplacer,
   ]) {
-    for (const search of replacer(content, oldString)) {
+    for (const search of Array.from(replacer(content, oldString))) {
       const index = content.indexOf(search)
       if (index === -1) continue
       notFound = false
@@ -623,4 +758,260 @@ export function replace(content: string, oldString: string, newString: string, r
   throw new Error(
     "oldString found multiple times and requires more code context to uniquely identify the intended match",
   )
+}
+
+
+// Apply edit output using apply agent
+async function applyEditOutput(editOutput: string, summary: string, ctx: any, filePath: string, contentOld: string) {
+  const agent = await Agent.get(ctx.agent)
+  const applyAgent = await Agent.get("apply")
+  // Silent fallback if no apply agent or model
+  const modelInfo = applyAgent?.model
+    ? await Provider.getModel(applyAgent.model.providerID, applyAgent.model.modelID)
+    : await (async () => {
+        const def = await Provider.defaultModel()
+        return Provider.getModel(def.providerID, def.modelID)
+      })()
+  const rawPrompt = applyAgent?.prompt ?? ""
+  const system = await Template.substitute(rawPrompt)
+
+  let contentNew: string | undefined
+  // Provider/model specific application
+  // Morph: model-specific (can appear under multiple providers)
+  if (modelInfo.modelID.startsWith("morph-v3")) {
+    // morph style: single user message with xml-like tags
+    const applyMsg = `<instruction>${summary || "Apply edit"}</instruction>\n<code>${contentOld}</code>\n<update>${editOutput}</update>`
+    const gen = await generateText({
+      model: modelInfo.language,
+      temperature: 0,
+      maxRetries: 5,
+      messages: [ { role: "user", content: applyMsg } ],
+    })
+    contentNew = extractCodeFromMarkdown(gen.text)
+  } else if (modelInfo.providerID === "relace" && modelInfo.modelID === "relace-apply") {
+    // relace apply endpoint expects initialCode + editSnippet JSON; treat editOutput as snippet
+    try {
+  const endpoint = (modelInfo.info.options && (modelInfo.info.options as any)["endpoint"]) || "/v1/code/apply"
+  const providerApi = (modelInfo.info as any).provider && (modelInfo.info as any).provider.api
+  const base = providerApi || (modelInfo.info.options && (modelInfo.info.options as any)["baseURL"]) || ""
+      const url = base.endsWith("/") ? base.slice(0, -1) + endpoint : base + endpoint
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: process.env["RELACE_API_KEY"] ? `Bearer ${process.env["RELACE_API_KEY"]}` : "",
+        },
+        body: JSON.stringify({ initialCode: contentOld, editSnippet: editOutput }),
+      })
+      if (resp.ok) {
+        const json: any = await resp.json().catch(() => ({}))
+        contentNew = json.mergedCode || json.code || json.result || contentOld
+      }
+    } catch {
+      // swallow and fallback
+    }
+  }
+
+  if (!contentNew) {
+    const userContent = `Apply the following changes to the original file content and return ONLY the full updated file content.\n\nFile: ${path.relative(Instance.directory, filePath)}\n\n--- ORIGINAL START ---\n${contentOld}\n--- ORIGINAL END ---\n\n--- CHANGES START ---\n${editOutput}\n--- CHANGES END ---`
+    const gen = await generateText({
+      model: modelInfo.language,
+      temperature: 0,
+      maxRetries: 5,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userContent },
+      ],
+    })
+    contentNew = extractCodeFromMarkdown(gen.text)
+  }
+
+  // Create diff for permission check
+  const diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
+  
+  if (agent.permission.edit === "ask") {
+    await Permission.ask({
+      type: "edit",
+      sessionID: ctx.sessionID,
+      messageID: ctx.messageID,
+      callID: ctx.callID,
+      title: "Edit this file: " + filePath,
+      metadata: {
+        filePath,
+        diff,
+      },
+    })
+  }
+
+  return { contentNew, diff }
+}
+
+// Parse fuzzy diff output to extract oldString and newString
+function parseFuzzyDiff(output: string): { oldString: string; newString: string } {
+  // First extract code from markdown if present
+  const extractedOutput = extractCodeFromMarkdown(output)
+  const lines = extractedOutput.split('\n')
+  let oldString = ""
+  let newString = ""
+  
+  // Try multiple patterns to extract old and new code sections
+  
+  // Pattern 1: Look for unified diff format
+  if (extractedOutput.includes('@@') && (extractedOutput.includes('-') || extractedOutput.includes('+'))) {
+    for (const line of lines) {
+      if (line.startsWith('-') && !line.startsWith('---')) {
+        oldString += line.substring(1) + '\n'
+      } else if (line.startsWith('+') && !line.startsWith('+++')) {
+        newString += line.substring(1) + '\n'
+      }
+    }
+  }
+  
+  // Pattern 2: Look for explicit old/new sections
+  if (!oldString || !newString) {
+    let inOld = false
+    let inNew = false
+    
+    for (const line of lines) {
+      const trimmed = line.trim().toLowerCase()
+      
+      if (trimmed.includes('old:') || trimmed.includes('replace:') || trimmed.includes('before:') || trimmed.includes('from:')) {
+        inOld = true
+        inNew = false
+        continue
+      }
+      if (trimmed.includes('new:') || trimmed.includes('with:') || trimmed.includes('after:') || trimmed.includes('to:')) {
+        inOld = false
+        inNew = true
+        continue
+      }
+      
+      if (inOld && !trimmed.startsWith('##') && !trimmed.includes(':')) {
+        oldString += line + '\n'
+      } else if (inNew && !trimmed.startsWith('##') && !trimmed.includes(':')) {
+        newString += line + '\n'
+      }
+    }
+  }
+  
+  // Pattern 3: Look for code blocks with context
+  if (!oldString || !newString) {
+    const codeBlocks = []
+    let inCodeBlock = false
+    let currentBlock = ""
+    
+    for (const line of lines) {
+      if (line.trim().startsWith('```')) {
+        if (inCodeBlock) {
+          codeBlocks.push(currentBlock.trim())
+          currentBlock = ""
+          inCodeBlock = false
+        } else {
+          inCodeBlock = true
+        }
+        continue
+      }
+      
+      if (inCodeBlock) {
+        currentBlock += line + '\n'
+      }
+    }
+    
+    // If we have exactly 2 code blocks, assume first is old, second is new
+    if (codeBlocks.length === 2) {
+      oldString = codeBlocks[0]
+      newString = codeBlocks[1]
+    }
+  }
+  
+  return {
+    oldString: oldString.trim(),
+    newString: newString.trim()
+  }
+}
+
+// Apply a diff to content to get the modified content
+function applyDiffToContent(originalContent: string, diff: string): string {
+  const lines = originalContent.split('\n')
+  const diffLines = diff.split('\n')
+  
+  // Simple diff application - handles basic unified diff format
+  let result = [...lines]
+  let lineOffset = 0
+  
+  for (let i = 0; i < diffLines.length; i++) {
+    const line = diffLines[i]
+    
+    if (line.startsWith('@@')) {
+      // Parse hunk header to get line numbers
+      const match = line.match(/@@ -(\d+),?\d* \+(\d+),?\d* @@/)
+      if (match) {
+        lineOffset = parseInt(match[1]) - 1 // Convert to 0-based index
+      }
+      continue
+    }
+    
+    if (line.startsWith('-') && !line.startsWith('---')) {
+      // Remove line
+      const lineContent = line.substring(1)
+      const index = result.findIndex((l, idx) => idx >= lineOffset && l === lineContent)
+      if (index !== -1) {
+        result.splice(index, 1)
+        lineOffset = index
+      }
+    } else if (line.startsWith('+') && !line.startsWith('+++')) {
+      // Add line
+      const lineContent = line.substring(1)
+      result.splice(lineOffset, 0, lineContent)
+      lineOffset++
+    } else if (line.startsWith(' ')) {
+      // Context line - advance offset
+      lineOffset++
+    }
+  }
+  
+  return result.join('\n')
+}
+
+// Use traditional diff method - edit output should be a proper diff
+async function diffEditOutput(editOutput: string, ctx: any, filePath: string, contentOld: string) {
+  const agent = await Agent.get(ctx.agent)
+  
+  // Extract code from markdown code blocks if present
+  const extractedCode = extractCodeFromMarkdown(editOutput)
+  let diff = extractedCode.trim()
+  
+  // If the diff doesn't look like a proper diff, try to parse it as fuzzy diff
+  if (!diff.includes('@@') && !(diff.includes('-') && diff.includes('+'))) {
+    // Fallback to fuzzy parsing if the edit agent didn't output proper diff format
+    const { oldString, newString } = parseFuzzyDiff(extractedCode)
+    
+    if (!oldString || !newString) {
+      throw new Error("Edit agent output must be a proper diff format or contain identifiable old and new code sections")
+    }
+    
+    // Use the sophisticated replace function with fuzzy matching
+    const contentNew = replace(contentOld, oldString, newString, false)
+    diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
+  }
+  
+  // For permission check, we need the actual modified content
+  // Parse the diff to apply changes to get contentNew
+  const contentNew = applyDiffToContent(contentOld, diff)
+
+  if (agent.permission.edit === "ask") {
+    await Permission.ask({
+      type: "edit",
+      sessionID: ctx.sessionID,
+      messageID: ctx.messageID,
+      callID: ctx.callID,
+      title: "Edit this file: " + filePath,
+      metadata: {
+        filePath,
+        diff,
+      },
+    })
+  }
+
+  return { contentNew, diff }
 }

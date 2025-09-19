@@ -29,6 +29,7 @@ export namespace ModelsDev {
         output: z.number(),
       }),
       experimental: z.boolean().optional(),
+      endpoint: z.string().optional(),
       options: z.record(z.string(), z.any()),
       provider: z.object({ npm: z.string() }).optional(),
     })

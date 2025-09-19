@@ -1,0 +1,8 @@
+// Recognizeably match an existing reference name
+function processUser(user: User) {
+  return user
+}
+
+function somethingNew() {
+  return true
+}

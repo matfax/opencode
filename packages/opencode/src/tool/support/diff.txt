@@ -1,0 +1,9 @@
+function calculateTotal(items: Item[]) {
+-  let total = 0
++  let total = 0.0
+   for (const item of items) {
+-    total += item.price
++    total += item.price * (1 - item.discount)
+   }
+   return total
+}

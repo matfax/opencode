@@ -560,50 +560,21 @@ export namespace Config {
   async function load(text: string, configFilepath: string) {
     // Centralized substitution for environment and file placeholders
     text = await Template.substitute(text, path.dirname(configFilepath))
-
-    const errors: JsoncParseError[] = []
-    const data = parseJsonc(text, errors, { allowTrailingComma: true })
-    if (errors.length) {
-      const lines = text.split("\n")
-      const errorDetails = errors
-        .map((e) => {
-          const beforeOffset = text.substring(0, e.offset).split("\n")
-          const line = beforeOffset.length
-          const column = beforeOffset[beforeOffset.length - 1].length + 1
-          const problemLine = lines[line - 1]
-
-          const error = `${printParseErrorCode(e.error)} at line ${line}, column ${column}`
-          if (!problemLine) return error
-
-          return `${error}\n   Line ${line}: ${problemLine}\n${"".padStart(column + 9)}^`
-        })
-        .join("\n")
-
-      throw new JsonError({
-        path: configFilepath,
-        message: `\n--- JSONC Input ---\n${text}\n--- Errors ---\n${errorDetails}\n--- End ---`,
-      })
+    // Parse + validate via centralized Template processing
+    const data = Template.processConfig(text, Info, configFilepath)
+    if (!data.$schema) {
+      data.$schema = "https://opencode.ai/config.json"
+      await Bun.write(configFilepath, JSON.stringify(data, null, 2))
     }
-
-    const parsed = Info.safeParse(data)
-    if (parsed.success) {
-      if (!parsed.data.$schema) {
-        parsed.data.$schema = "https://opencode.ai/config.json"
-        await Bun.write(configFilepath, JSON.stringify(parsed.data, null, 2))
+    if (data.plugin) {
+      for (let i = 0; i < data.plugin?.length; i++) {
+        const plugin = data.plugin[i]
+        try {
+          data.plugin[i] = import.meta.resolve(plugin, configFilepath)
+        } catch (err) {}
       }
-      const data = parsed.data
-      if (data.plugin) {
-        for (let i = 0; i < data.plugin?.length; i++) {
-          const plugin = data.plugin[i]
-          try {
-            data.plugin[i] = import.meta.resolve(plugin, configFilepath)
-          } catch (err) {}
-        }
-      }
-      return data
     }
-
-    throw new InvalidError({ path: configFilepath, issues: parsed.error.issues })
+    return data
   }
   export const JsonError = NamedError.create(
     "ConfigJsonError",

@@ -7,6 +7,10 @@ import { Instance } from "../project/instance"
 declare const Bun: any
 
 export namespace Template {
+  export enum Format {
+    Snippet = "snippet",
+    Diff = "diff",
+  }
   /**
    * Process template variables in text, supporting {env:VARIABLE} and {file:path} substitutions.
    * This is the same processing used in config files.
@@ -140,4 +144,19 @@ export namespace Template {
   return substitute(template, basePath)
   }
 
+  /**
+   * Process input placeholders in template text
+   */
+  export async function substituteInputs(
+    text: string,
+    inputs: Record<string, string | number | boolean | undefined>
+  ): Promise<string> {
+    let result = text
+    for (const [key, value] of Object.entries(inputs)) {
+      const safeVal = value == null ? "" : String(value)
+      const pattern = new RegExp(`\\{input:${key}\\}`, 'g')
+      result = result.replace(pattern, safeVal)
+    }
+    return result
+  }
 }

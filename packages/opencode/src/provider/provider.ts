@@ -39,6 +39,18 @@ export namespace Provider {
         },
       }
     },
+    async morph() {
+      return {
+        autoload: false,
+        options: {},
+      }
+    },
+    async relace() {
+      return {
+        autoload: false,
+        options: {},
+      }
+    },
     async opencode(input) {
       return {
         autoload: Object.keys(input.models).length > 0,
@@ -301,6 +313,97 @@ export namespace Provider {
     // load config
     for (const [providerID, provider] of configProviders) {
       mergeProvider(providerID, provider.options ?? {}, "config")
+    }
+
+    // Add predefined models for custom providers
+    // Add morph provider if not exists
+    if (!database["morph"]) {
+      database["morph"] = {
+        id: "morph",
+        name: "Morph",
+        env: ["MORPH_API_KEY"],
+        api: "https://api.morph.com",
+        models: {},
+      }
+    }
+    database["morph"].models["morph-v3-large"] = {
+      id: "morph-v3-large",
+      name: "Morph V3 Large",
+      release_date: "2025-01-01",
+      attachment: false,
+      reasoning: false,
+      temperature: false,
+      tool_call: false,
+      cost: {
+        input: 0,
+        output: 0,
+        cache_read: 0,
+        cache_write: 0,
+      },
+      limit: {
+        context: 81920,
+        output: 38000,
+      },
+      options: {
+        format: "xml",
+      },
+    }
+    
+    database["morph"].models["morph-v3-fast"] = {
+      id: "morph-v3-fast",
+      name: "Morph V3 Fast",
+      release_date: "2025-01-01",
+      attachment: false,
+      reasoning: false,
+      temperature: false,
+      tool_call: false,
+      cost: {
+        input: 0,
+        output: 0,
+        cache_read: 0,
+        cache_write: 0,
+      },
+      limit: {
+        context: 81920,
+        output: 38000,
+      },
+      options: {
+        format: "xml",
+      },
+    }
+
+    // Add relace provider if not exists
+    if (!database["relace"]) {
+      database["relace"] = {
+        id: "relace",
+        name: "Relace",
+        env: ["RELACE_API_KEY"],
+        api: "https://api.relace.com",
+        models: {},
+      }
+    }
+    database["relace"].models["relace-apply"] = {
+      id: "relace-apply",
+      name: "Relace Apply Model",
+      release_date: "2025-01-01",
+      attachment: false,
+      reasoning: false,
+      temperature: false,
+      tool_call: false,
+      cost: {
+        input: 0,
+        output: 0,
+        cache_read: 0,
+        cache_write: 0,
+      },
+      limit: {
+        context: 81920,
+        output: 38000,
+      },
+      endpoint: "/v1/code/apply",
+      options: {
+        format: "json",
+      },
     }
 
     for (const [providerID, provider] of Object.entries(providers)) {

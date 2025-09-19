@@ -105,6 +105,26 @@ export namespace Agent {
         mode: "support",
         builtIn: true,
       },
+      edit: {
+        name: "edit",
+        description: "Specialized agent for editing code files",
+        prompt: "",
+        tools: {},
+        options: {},
+        permission: agentPermission,
+        mode: "support",
+        builtIn: true,
+      },
+      apply: {
+        name: "apply",
+        description: "Specialized agent for applying code changes",
+        prompt: "",
+        tools: {},
+        options: {},
+        permission: agentPermission,
+        mode: "support",
+        builtIn: true,
+      },
     }
     for (const [key, value] of Object.entries(cfg.agent ?? {})) {
       if (value.disable) {
