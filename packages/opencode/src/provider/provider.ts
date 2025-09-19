@@ -417,6 +417,38 @@ export namespace Provider {
       )
       provider.info.models = filteredModels
 
+      // Ensure openrouter morph-v3-large model is available if user has openrouter provider
+      if (providerID === "openrouter" && !provider.info.models["morph/morph-v3-large"]) {
+        provider.info.models["morph/morph-v3-large"] = {
+          id: "morph/morph-v3-large",
+          name: "Morph V3 Large (via OpenRouter)",
+          release_date: "2025-01-01",
+          attachment: false,
+          reasoning: false,
+          temperature: false,
+          tool_call: false,
+          cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 },
+          limit: { context: 81920, output: 38000 },
+          options: { format: "xml" },
+        }
+      }
+
+      // Ensure openrouter morph-v3-fast model is available if user has openrouter provider
+      if (providerID === "openrouter" && !provider.info.models["morph/morph-v3-fast"]) {
+        provider.info.models["morph/morph-v3-fast"] = {
+          id: "morph/morph-v3-fast",
+          name: "Morph V3 Fast (via OpenRouter)",
+          release_date: "2025-01-01",
+          attachment: false,
+          reasoning: false,
+          temperature: false,
+          tool_call: false,
+          cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 },
+          limit: { context: 81920, output: 38000 },
+          options: { format: "xml" },
+        }
+      }
+
       if (Object.keys(provider.info.models).length === 0) {
         delete providers[providerID]
         continue
