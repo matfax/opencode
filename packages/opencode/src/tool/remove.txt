@@ -1,0 +1,7 @@
+Removes (deletes) a single file from the project workspace.
+
+Parameters:
+- filePath: Absolute or project-relative path of the file to remove.
+
+Constraints:
+- Does NOT remove directories.
