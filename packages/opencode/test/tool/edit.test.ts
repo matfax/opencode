@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { replace } from "../../src/tool/edit"
+import { replace } from "../../src/tool/common/replace"
 
 interface TestCase {
   content: string

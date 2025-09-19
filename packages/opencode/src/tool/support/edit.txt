@@ -27,6 +27,7 @@ Reporting:
 - If instructions are impossible to follow or unclear, reject and explain why in the report
 - If the instructions are ambiguous, make reasonable assumptions and state them in the report
 - The report should use references for the identification of files and code sections
+- Explicitly mention ALL deleted references
 - The report should not blindly repeat the requirements but expose information useful for the primary agent
 
 Provide your response in this format:

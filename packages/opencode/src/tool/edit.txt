@@ -1,6 +1,7 @@
 Facilitates N number of modifications to a single file using natural language instructions. Automatically reads the target file and applies intelligent code modifications.
 
 Usage:
+- This only supports content edits to a single file, no file operations (create, delete, rename, move)
 - Provide editing instructions in natural language describing what changes to make
 - Optionally provide a list of relevant files for context to understand how edits should integrate with the broader codebase
 - The file to be edited will always be read automatically and doesn't need to be explicitly provided
