@@ -1153,8 +1153,14 @@ export namespace Server {
           },
         }),
         async (c) => {
-          const modes = await Agent.list()
-          return c.json(modes)
+          let agents = await Agent.list()
+          // By default hide support & pure subagent agents from primary UI listings
+          // unless client explicitly requests all agents (?all=1)
+          const all = c.req.query("all")
+          if (!all) {
+            agents = agents.filter((a) => a.mode === "primary" || a.mode === "all")
+          }
+          return c.json(agents)
         },
       )
       .post(
