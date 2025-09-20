@@ -55,23 +55,22 @@ export const SymbolTool = Tool.define("symbol", {
       const text = await Bun.file(fileAbs).text()
       const lines = text.split("\n")
       for (const c of candidates) {
-        const start = c.range.start.line
-        const end = c.range.end.line
+        const range = c.range ?? c.location?.range
+        if (!range || !range.start || !range.end) continue
+        const start = range.start.line
+        const end = range.end.line
         const from = Math.max(0, start - context)
         const to = Math.min(lines.length - 1, end + context)
         const slice = lines.slice(from, to + 1)
-        let body: string
-        if (args.numbering) {
-          body = slice.map((ln, i) => `${(from + 1 + i).toString().padStart(5, "0")}| ${ln}`).join("\n")
-        } else {
-          body = slice.join("\n")
-        }
+        const body = args.numbering
+          ? slice.map((ln, i) => `${(from + 1 + i).toString().padStart(5, "0")}| ${ln}`).join("\n")
+          : slice.join("\n")
         results.push({
           name: c.name,
           kind: c.kind,
           file: path.relative(Instance.worktree, fileAbs),
           start,
-          end,
+            end,
           code: body,
         })
       }
