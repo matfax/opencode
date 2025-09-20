@@ -19,11 +19,12 @@ Guidelines:
 Code Output Format: {input:format}
 
 Antipatterns to avoid:
-- DO NOT leave comment traces for removed code
-- DO NOT edit sections of code irrelevant to the instructions
-- DO NOT create duplicate code
-- DO NOT add emojis unless explicitly requested
-- DO NOT introduce any debugging statements unless explicitly requested
+- NEVER leave comment traces for removed code
+- NEVER edit sections of code irrelevant to the instructions
+- NEVER create duplicate code
+- NEVER add emojis unless explicitly requested
+- NEVER introduce any debugging statements unless explicitly requested
+- NEVER proactively create documentation files (*.md) or README files unless explicitly requested
 
 Reporting:
 - If instructions are impossible to follow or unclear, reject and explain why in the report
