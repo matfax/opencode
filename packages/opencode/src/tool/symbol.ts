@@ -5,6 +5,74 @@ import { LSP } from "../lsp"
 import { Instance } from "../project/instance"
 import DESCRIPTION from "./symbol.txt"
 
+async function tryStartLSPServers() {
+  // Try to find files in the workspace that might need LSP servers
+  const worktree = Instance.worktree
+  const extensions = [
+    // TypeScript/JavaScript
+    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts",
+    // Python
+    ".py", ".pyi",
+    // Go
+    ".go",
+    // Ruby
+    ".rb", ".rake", ".gemspec", ".ru",
+    // Elixir
+    ".ex", ".exs",
+    // Zig
+    ".zig", ".zon",
+    // C#
+    ".cs",
+    // Vue
+    ".vue",
+    // Rust
+    ".rs",
+    // C/C++
+    ".c", ".cpp", ".cc", ".cxx", ".c++", ".h", ".hpp", ".hh", ".hxx", ".h++",
+    // Svelte
+    ".svelte"
+  ]
+  
+  async function findFileWithExtension(ext: string, dir: string, depth = 0): Promise<string | null> {
+    if (depth > 3) return null // Limit recursion depth for performance
+    
+    try {
+      const entries = await Bun.file(dir).exists() ? 
+        await (await import("fs/promises")).readdir(dir, { withFileTypes: true }) : []
+      
+      // First pass: look for files with the extension
+      for (const entry of entries) {
+        if (entry.isFile() && entry.name.endsWith(ext)) {
+          return path.join(dir, entry.name)
+        }
+      }
+      
+      // Second pass: recurse into directories (skip common ignore patterns)
+      for (const entry of entries) {
+        if (entry.isDirectory() && 
+            !["node_modules", ".git", "dist", "build", ".next", "target"].includes(entry.name)) {
+          const found = await findFileWithExtension(ext, path.join(dir, entry.name), depth + 1)
+          if (found) return found
+        }
+      }
+    } catch {
+      // Ignore filesystem errors
+    }
+    
+    return null
+  }
+  
+  for (const ext of extensions) {
+    const firstFile = await findFileWithExtension(ext, worktree)
+    if (firstFile) {
+      // Try to start LSP for this file type
+      await LSP.touchFile(firstFile, false).catch(() => {
+        // Ignore errors, LSP server might not be available for this file type
+      })
+    }
+  }
+}
+
 export const SymbolTool = Tool.define("symbol", {
   description: DESCRIPTION,
   parameters: z.object({
@@ -16,14 +84,22 @@ export const SymbolTool = Tool.define("symbol", {
   }),
   async execute(args) {
 
-    // Check if any LSP clients are available
+    // Initialize LSP and ensure servers are started for workspace file types
     const lspState = await LSP.init()
+    
+    // If no clients are running, try to start them by discovering workspace files
     if (lspState.clients.length === 0) {
-      return {
-        title: args.name,
-        metadata: { count: 0, fuzzy: !!args.fuzzy, error: "no_lsp" },
-        output:
-          "No LSP servers are configured or running. Symbol search requires a language server for the target file type. Please configure an LSP server in your opencode configuration.",
+      await tryStartLSPServers()
+      
+      // Check again after attempting to start servers
+      const updatedState = await LSP.init()
+      if (updatedState.clients.length === 0) {
+        return {
+          title: args.name,
+          metadata: { count: 0, fuzzy: !!args.fuzzy, error: "no_lsp" },
+          output:
+            "No LSP servers are configured or running. Symbol search requires a language server for the target file type. Please configure an LSP server in your opencode configuration.",
+        }
       }
     }
 
