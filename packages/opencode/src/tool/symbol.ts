@@ -17,17 +17,18 @@ export const SymbolTool = Tool.define("symbol", {
   async execute(args) {
     const limit = args.limit === undefined ? 200 : args.limit
     const context = args.context === undefined ? 2 : args.context
-    
+
     // Check if any LSP clients are available
     const lspState = await LSP.init()
     if (lspState.clients.length === 0) {
       return {
         title: args.name,
         metadata: { count: 0, fuzzy: !!args.fuzzy, error: "no_lsp" },
-        output: "No LSP servers are configured or running. Symbol search requires a language server for the target file type. Please configure an LSP server in your opencode configuration."
+        output:
+          "No LSP servers are configured or running. Symbol search requires a language server for the target file type. Please configure an LSP server in your opencode configuration.",
       }
     }
-    
+
     const symbols = await LSP.workspaceSymbol(args.name, limit)
     const results: {
       name: string
@@ -81,7 +82,7 @@ export const SymbolTool = Tool.define("symbol", {
           kind: c.kind,
           file: path.relative(Instance.worktree, fileAbs),
           start,
-            end,
+          end,
           code: body,
         })
       }
