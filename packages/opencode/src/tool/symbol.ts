@@ -10,13 +10,11 @@ export const SymbolTool = Tool.define("symbol", {
   parameters: z.object({
     name: z.string().describe("Symbol name to look for (class/function/etc.)"),
     fuzzy: z.boolean().describe("Enable substring/camelCase fuzzy match").optional(),
-    limit: z.number().describe("Max workspace symbols to scan (default 200, 0 = unlimited)").optional(),
-    context: z.number().describe("Extra context lines around definition (default 2)").optional(),
+    limit: z.number().describe("Max workspace symbols to scan (default 200, 0 = unlimited)").optional().default(200),
+    context: z.number().describe("Extra context lines around definition").optional().default(0),
     numbering: z.boolean().describe("Prefix lines with numbers (default false)").optional(),
   }),
   async execute(args) {
-    const limit = args.limit === undefined ? 200 : args.limit
-    const context = args.context === undefined ? 2 : args.context
 
     // Check if any LSP clients are available
     const lspState = await LSP.init()
@@ -29,7 +27,7 @@ export const SymbolTool = Tool.define("symbol", {
       }
     }
 
-    const symbols = await LSP.workspaceSymbol(args.name, limit)
+    const symbols = await LSP.workspaceSymbol(args.name, args.limit)
     const results: {
       name: string
       kind: number
@@ -71,8 +69,8 @@ export const SymbolTool = Tool.define("symbol", {
         if (!range || !range.start || !range.end) continue
         const start = range.start.line
         const end = range.end.line
-        const from = Math.max(0, start - context)
-        const to = Math.min(lines.length - 1, end + context)
+        const from = Math.max(0, start - args.context)
+        const to = Math.min(lines.length - 1, end + args.context)
         const slice = lines.slice(from, to + 1)
         const body = args.numbering
           ? slice.map((ln, i) => `${(from + 1 + i).toString().padStart(5, "0")}| ${ln}`).join("\n")
@@ -94,13 +92,10 @@ export const SymbolTool = Tool.define("symbol", {
         : results
             .map((r) => {
               return [
-                "<symbol>",
                 `name: ${r.name}`,
-                `kind: ${r.kind}`,
                 `file: ${r.file}:${r.start + 1}`,
                 "----",
                 r.code,
-                "</symbol>",
               ].join("\n")
             })
             .join("\n\n")
