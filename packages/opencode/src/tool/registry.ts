@@ -14,6 +14,8 @@ import { InvalidTool } from "./invalid"
 import { SymbolTool } from "./symbol"
 import type { Agent } from "../agent/agent"
 import { Tool } from "./tool"
+import { MultiEditTool } from "./multiedit"
+import { RemoveTool } from "./remove"
 
 export namespace ToolRegistry {
   // Built-in tools that ship with opencode
@@ -21,6 +23,8 @@ export namespace ToolRegistry {
     InvalidTool,
     BashTool,
     EditTool,
+    MultiEditTool,
+    RemoveTool,
     WebFetchTool,
     GlobTool,
     GrepTool,
