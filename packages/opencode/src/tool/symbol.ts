@@ -10,17 +10,30 @@ async function tryStartLSPServers() {
   const worktree = Instance.worktree
   const extensions = [
     // TypeScript/JavaScript
-    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".mts",
+    ".cts",
     // Python
-    ".py", ".pyi",
+    ".py",
+    ".pyi",
     // Go
     ".go",
     // Ruby
-    ".rb", ".rake", ".gemspec", ".ru",
+    ".rb",
+    ".rake",
+    ".gemspec",
+    ".ru",
     // Elixir
-    ".ex", ".exs",
+    ".ex",
+    ".exs",
     // Zig
-    ".zig", ".zon",
+    ".zig",
+    ".zon",
     // C#
     ".cs",
     // Vue
@@ -28,29 +41,38 @@ async function tryStartLSPServers() {
     // Rust
     ".rs",
     // C/C++
-    ".c", ".cpp", ".cc", ".cxx", ".c++", ".h", ".hpp", ".hh", ".hxx", ".h++",
+    ".c",
+    ".cpp",
+    ".cc",
+    ".cxx",
+    ".c++",
+    ".h",
+    ".hpp",
+    ".hh",
+    ".hxx",
+    ".h++",
     // Svelte
-    ".svelte"
+    ".svelte",
   ]
-  
+
   async function findFileWithExtension(ext: string, dir: string, depth = 0): Promise<string | null> {
     if (depth > 3) return null // Limit recursion depth for performance
-    
+
     try {
-      const entries = await Bun.file(dir).exists() ? 
-        await (await import("fs/promises")).readdir(dir, { withFileTypes: true }) : []
-      
+      const entries = (await Bun.file(dir).exists())
+        ? await (await import("fs/promises")).readdir(dir, { withFileTypes: true })
+        : []
+
       // First pass: look for files with the extension
       for (const entry of entries) {
         if (entry.isFile() && entry.name.endsWith(ext)) {
           return path.join(dir, entry.name)
         }
       }
-      
+
       // Second pass: recurse into directories (skip common ignore patterns)
       for (const entry of entries) {
-        if (entry.isDirectory() && 
-            !["node_modules", ".git", "dist", "build", ".next", "target"].includes(entry.name)) {
+        if (entry.isDirectory() && !["node_modules", ".git", "dist", "build", ".next", "target"].includes(entry.name)) {
           const found = await findFileWithExtension(ext, path.join(dir, entry.name), depth + 1)
           if (found) return found
         }
@@ -58,10 +80,10 @@ async function tryStartLSPServers() {
     } catch {
       // Ignore filesystem errors
     }
-    
+
     return null
   }
-  
+
   for (const ext of extensions) {
     const firstFile = await findFileWithExtension(ext, worktree)
     if (firstFile) {
@@ -83,14 +105,13 @@ export const SymbolTool = Tool.define("symbol", {
     numbering: z.boolean().describe("Prefix lines with numbers (default false)").optional(),
   }),
   async execute(args) {
-
     // Initialize LSP and ensure servers are started for workspace file types
     const lspState = await LSP.init()
-    
+
     // If no clients are running, try to start them by discovering workspace files
     if (lspState.clients.length === 0) {
       await tryStartLSPServers()
-      
+
       // Check again after attempting to start servers
       const updatedState = await LSP.init()
       if (updatedState.clients.length === 0) {
@@ -167,12 +188,7 @@ export const SymbolTool = Tool.define("symbol", {
         ? "No symbols found"
         : results
             .map((r) => {
-              return [
-                `name: ${r.name}`,
-                `file: ${r.file}:${r.start + 1}`,
-                "----",
-                r.code,
-              ].join("\n")
+              return [`name: ${r.name}`, `file: ${r.file}:${r.start + 1}`, "----", r.code].join("\n")
             })
             .join("\n\n")
 
