@@ -6,7 +6,7 @@
 import z from "zod/v4"
 import * as path from "path"
 import { Tool } from "./tool"
-import * as DESCRIPTION from "./edit.txt"
+import DESCRIPTION from "./edit.txt"
 // Statically import template + examples
 // @ts-ignore
 import EDIT_TEMPLATE from "./support/edit.txt"
