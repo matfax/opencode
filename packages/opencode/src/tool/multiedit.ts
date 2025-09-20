@@ -189,7 +189,7 @@ export const MultiEditTool = Tool.define("multiedit", {
         const diff = trimDiff(createTwoFilesPatch(absPath, absPath, "", newContent))
         if (agent?.permission.edit === "ask") {
           await Permission.ask({
-            type: "edit",
+            type: "write",
             sessionID: ctx.sessionID,
             messageID: ctx.messageID,
             callID: ctx.callID,

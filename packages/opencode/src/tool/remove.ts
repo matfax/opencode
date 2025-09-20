@@ -31,7 +31,7 @@ export const RemoveTool = Tool.define("remove", {
     if (agent?.permission.edit === "ask") {
       const diff = trimDiff(createTwoFilesPatch(abs, abs, original, ""))
       await Permission.ask({
-        type: "edit",
+        type: "write",
         sessionID: ctx.sessionID,
         messageID: ctx.messageID,
         callID: ctx.callID,
