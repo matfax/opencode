@@ -1,9 +1,10 @@
 Finds definitions of classes, functions, methods, interfaces, enums, structs, variables, constants.
-Returns one <symbol> block per match with name, kind number, file:line, and code lines.
-Line numbers are only added when numbering=true.
 
 Notes:
-- Matching is case-insensitive.
-- fuzzy=true broadens matching; exact still included.
-- limit=0 may be slower on large codebases.
-- numbering=true changes output format; omit for raw code.
+- Matching is case-insensitive
+- fuzzy=true broadens matching; exact still included
+- limit=0 may be slower on large codebases
+- numbering=true changes output format; omit for raw code
+- fullBody=true should be used for functions/methods to get the complete implementation instead of just the head/signature
+
+Prefer this tool over `search` and `read` when looking for referenced symbols/definitions.

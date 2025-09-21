@@ -104,11 +104,12 @@ export const SymbolTool = Tool.define("symbol", {
     context: z.number().describe("Extra context lines around definition").optional().default(0),
     numbering: z.boolean().describe("Prefix lines with numbers (default false)").optional(),
     autorefresh: z.boolean().describe("Automatically refresh results when code changes").optional(),
+    fullBody: z.boolean().describe("Include full function/method body instead of just signature (recommended for functions)").optional(),
   }),
   key: (p) => {
     return ["symbol", p.name].join("|")
   },
-  enableRefresh: (p) => !!p.autorefresh, // heuristic: only auto-refresh fuzzy searches
+  enableRefresh: (p) => !!p.autorefresh,
   async execute(args) {
     // Initialize LSP and ensure servers are started for workspace file types
     const lspState = await LSP.init()
@@ -168,9 +169,14 @@ export const SymbolTool = Tool.define("symbol", {
       const lines = text.split("\n")
       for (const c of candidates) {
         const range = c.range ?? c.location?.range
+        const selectionRange = c.selectionRange ?? c.range ?? c.location?.range
         if (!range || !range.start || !range.end) continue
-        const start = range.start.line
-        const end = range.end.line
+        
+        // Use selectionRange (signature) by default, or full range when fullBody is requested
+        const useRange = args.fullBody ? range : selectionRange
+        const start = useRange.start.line
+        const end = useRange.end.line
+        
         const from = Math.max(0, start - args.context)
         const to = Math.min(lines.length - 1, end + args.context)
         const slice = lines.slice(from, to + 1)
