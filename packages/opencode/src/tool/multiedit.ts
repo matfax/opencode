@@ -265,6 +265,6 @@ export const MultiEditTool = Tool.define("multiedit", {
     }
 
     const summary = lastReport || (expanded ? "Multi-file edits applied (context expanded)" : "Multi-file edits applied")
-    return { title: "multiedit", metadata: { results, expanded: !!expanded, expansionLog }, output: summary }
+    return { title: "multiedit", metadata: { results, expanded: !!expanded, expansionLog, summary }, output: summary }
   },
 })
