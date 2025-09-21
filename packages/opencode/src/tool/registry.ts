@@ -16,6 +16,7 @@ import type { Agent } from "../agent/agent"
 import { Tool } from "./tool"
 import { MultiEditTool } from "./multiedit"
 import { RemoveTool } from "./remove"
+import { DiffTool } from "./diff"
 
 export namespace ToolRegistry {
   // Built-in tools that ship with opencode
@@ -36,6 +37,7 @@ export namespace ToolRegistry {
     TodoReadTool,
     TaskTool,
     SymbolTool,
+    DiffTool,
   ]
 
   // Extra tools registered at runtime (via plugins)
@@ -147,6 +149,13 @@ export namespace ToolRegistry {
   ): Promise<Record<string, boolean>> {
     const result: Record<string, boolean> = {}
     result["patch"] = false
+    // Disable diff tool if project is not git
+    try {
+      const { Instance } = await import("../project/instance")
+      if (Instance.project.vcs !== "git") {
+        result["diff"] = false
+      }
+    } catch {}
 
     if (agent.permission.edit === "deny") {
       result["edit"] = false

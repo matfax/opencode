@@ -1,0 +1,12 @@
+Show latest changes in the working tree and/or a specific commit.
+
+Selection logic (default when no commit provided):
+0. If `combined` is true: show combined diff of staged + unstaged (git diff ; git diff --staged)
+1. Else if there are unstaged changes: show unstaged diff (git diff)
+2. Else if there are staged changes: show staged diff (git diff --staged)
+3. Else: show diff of last commit (git show --format=)
+
+If both `commit` and `combined` supplied, combined of working tree still displayed (commit ignored for combined mode).
+
+Use this tool if the user references recent changes or a bug you've made.
+It should serve to give you an overview of the current combined changes that you have made so far, and possibly the user as well.
