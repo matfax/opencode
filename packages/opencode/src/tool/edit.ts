@@ -14,7 +14,6 @@ import EDIT_TEMPLATE from "./support/edit.txt"
 import SNIPPET_EXAMPLE from "./support/snippet.txt"
 // @ts-ignore
 import DIFF_EXAMPLE from "./support/diff.txt"
-import { FileTime } from "../file/time"
 import { Filesystem } from "../util/filesystem"
 import { Instance } from "../project/instance"
 import { Agent } from "../agent/agent"
@@ -111,7 +110,7 @@ export const EditTool = Tool.define("edit", {
     const stats = await file.stat().catch(() => {})
     if (!stats) throw new Error(`File ${filePath} not found`)
     if (stats.isDirectory()) throw new Error(`Path is a directory, not a file: ${filePath}`)
-    await FileTime.assert(ctx.sessionID, filePath)
+
     const contentOld = await file.text()
 
     // Resolve edit and apply agents and models
