@@ -8,7 +8,7 @@ import { generateText } from "ai"
 import { Agent } from "../agent/agent"
 import { Provider } from "../provider/provider"
 import { Template } from "../util/template"
-import { handleDiagnosticsAndFileWrite, trimDiff, applyDiffToContent } from "../util/apply"
+import { handleDiagnosticsAndFileWrite, trimDiff, diffEditOutput, applyEditOutput } from "../util/apply"
 import { RemoveTool } from "./remove"
 import { createTwoFilesPatch } from "diff"
 import { File } from "../file"
@@ -72,35 +72,10 @@ function validatePath(p: string): string {
 export const MultiEditTool = Tool.define("multiedit", {
   description: DESCRIPTION,
   parameters: z.object({
-    // Legacy mode
-    filePath: z.string().optional().describe("Legacy: base file path for sequential edits"),
-    edits: z
-      .array(
-        z.object({
-          filePath: z.string().optional(),
-          instructions: z.string(),
-        }),
-      )
-      .optional(),
-    // New generation mode
     instructions: z.string().optional().describe("Natural language multi-file instructions"),
     relevantFiles: z.array(z.string()).optional().describe("Optional list of context files"),
   }),
   async execute(params, ctx) {
-    // Legacy fallback: sequential single-file edits forwarded to edit tool
-    if (params.filePath && params.edits && params.edits.length) {
-      const editTool = await (await import("./edit")).EditTool.init()
-      const results = []
-      for (const e of params.edits) {
-        const r = await editTool.execute({ filePath: e.filePath ?? params.filePath, instructions: e.instructions }, ctx)
-        results.push(r)
-      }
-      return {
-        title: path.relative(Instance.worktree, params.filePath),
-        metadata: { results: results.map((r) => r.metadata) },
-        output: results.at(-1)?.output || "",
-      }
-    }
 
     if (!params.instructions || params.instructions.trim() === "") throw new Error("instructions required")
 
@@ -209,47 +184,45 @@ export const MultiEditTool = Tool.define("multiedit", {
         results.push({ file: relPath, action, diff, diagnostics: {} })
         continue
       }
-      if (action === "modify" || action === "rename") {
+      if (action === "rename") {
         if (existingContent == null) throw new Error(`File not found: ${relPath}`)
-        let appliedContent = existingContent
-        if (format === Template.Format.Snippet) {
-          appliedContent = section.body.join("\n").trimEnd()
-        } else {
-          // Diff mode: assemble patch body and apply
-          const diffBody = section.body.join("\n")
-          let diffText = diffBody
-          if (!(diffText.includes("@@") || diffText.includes("+") || diffText.includes("-"))) {
-            diffText = diffBody
-          }
-          appliedContent = applyDiffToContent(existingContent, diffText)
-        }
-        let finalAbs = absPath
-        if (action === "rename") {
-          if (!targetAbs) throw new Error("Missing target for rename")
-          if (await readFileIfExists(targetAbs)) throw new Error(`Target exists: ${section.to}`)
-          finalAbs = targetAbs
-        }
-        const diff = trimDiff(createTwoFilesPatch(absPath, absPath, existingContent, appliedContent))
+        if (!targetAbs) throw new Error("Missing target for rename")
+        if (await readFileIfExists(targetAbs)) throw new Error(`Target exists: ${section.to}`)
+        const diff = trimDiff(createTwoFilesPatch(absPath, absPath, existingContent, existingContent))
         if (agent?.permission.edit === "ask") {
           await Permission.ask({
             type: "edit",
             sessionID: ctx.sessionID,
             messageID: ctx.messageID,
             callID: ctx.callID,
-            title: action === "rename" ? `Modify & rename file: ${absPath} -> ${finalAbs}` : `Modify file: ${absPath}`,
-            metadata: { filePath: absPath, to: finalAbs, diff, action },
+            title: `Rename file: ${absPath} -> ${targetAbs}`,
+            metadata: { filePath: absPath, to: targetAbs, action },
           })
         }
-        // Write changes (on original path first for stable diff reference)
-        const { diagnostics } = await handleDiagnosticsAndFileWrite(absPath, appliedContent, ctx)
-        if (action === "rename" && finalAbs !== absPath) {
-          // Ensure target directory exists
-          await fs.mkdir(path.dirname(finalAbs), { recursive: true }).catch(() => {})
-          await fs.rename(absPath, finalAbs)
-          await Bus.publish(File.Event.Edited, { file: finalAbs })
-          FileTime.read(ctx.sessionID, finalAbs)
+        await fs.mkdir(path.dirname(targetAbs), { recursive: true }).catch(() => {})
+        await fs.rename(absPath, targetAbs)
+        await Bus.publish(File.Event.Edited, { file: targetAbs })
+        FileTime.read(ctx.sessionID, targetAbs)
+        results.push({ file: relPath, action, to: section.to, diff, diagnostics: {} })
+        continue
+      }
+      if (action === "modify") {
+        if (existingContent == null) throw new Error(`File not found: ${relPath}`)
+        let contentNew: string = existingContent
+        let diff: string = ""
+        if (format === Template.Format.Snippet) {
+          const snippet = section.body.join("\n").trimEnd()
+          const result = await applyEditOutput(snippet, `Multi edit modify ${absPath}`, ctx, absPath, existingContent)
+          contentNew = result.contentNew ?? existingContent
+          diff = result.diff
+        } else {
+          const diffText = section.body.join("\n")
+          const result = await diffEditOutput(diffText, ctx, absPath, existingContent)
+          contentNew = result.contentNew ?? existingContent
+          diff = result.diff
         }
-        results.push({ file: relPath, action, to: section.to, diff, diagnostics })
+        const { diagnostics } = await handleDiagnosticsAndFileWrite(absPath, contentNew, ctx)
+        results.push({ file: relPath, action, diff, diagnostics })
         continue
       }
     }
