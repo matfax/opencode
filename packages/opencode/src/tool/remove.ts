@@ -4,7 +4,6 @@ import * as path from "path"
 import DESCRIPTION from "./remove.txt"
 import { Filesystem } from "../util/filesystem"
 import { Instance } from "../project/instance"
-import { FileTime } from "../file/time"
 import { Agent } from "../agent/agent"
 import { Permission } from "../permission"
 import { createTwoFilesPatch } from "diff"
@@ -40,15 +39,24 @@ export const RemoveTool = Tool.define("remove", {
       })
     }
 
+    let deleted = false
     try {
-      await (Filesystem as any).remove?.(abs)
-    } catch {
-      /* ignore */
-    }
-    try {
-      await Bun.write(abs, "")
+      if ((Filesystem as any).remove) {
+        await (Filesystem as any).remove(abs)
+        deleted = true
+      }
     } catch {}
-    FileTime.read(ctx.sessionID, abs)
-    return { title: path.relative(Instance.worktree, abs), metadata: { filePath: abs }, output: "File removed" }
+    if (!deleted) {
+      try {
+        const fsMod = await import("fs/promises")
+        await fsMod.rm(abs, { force: true })
+        deleted = true
+      } catch {}
+    }
+    return {
+      title: path.relative(Instance.worktree, abs),
+      metadata: { filePath: abs, deleted },
+      output: deleted ? "File removed" : "File removal attempted (could not confirm)",
+    }
   },
 })
