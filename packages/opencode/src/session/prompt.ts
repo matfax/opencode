@@ -52,7 +52,8 @@ import { $ } from "bun"
 export namespace SessionPrompt {
   const log = Log.create({ service: "session.prompt" })
   // Stores key/enableRefresh lambdas for currently resolved tools (per prompt cycle)
-  const toolMeta: Record<string, { key?: (args: any) => string | undefined; enableRefresh?: (args: any) => boolean }> = {}
+  const toolMeta: Record<string, { key?: (args: any) => string | undefined; enableRefresh?: (args: any) => boolean }> =
+    {}
   export const OUTPUT_TOKEN_MAX = 32_000
 
   export const Event = {
@@ -537,10 +538,10 @@ export namespace SessionPrompt {
       }
       tools[key] = item
     }
-    
+
     // After tools are resolved and toolMeta is populated, refresh fresh-enabled parts
     await refreshFreshParts(input.sessionID)
-    
+
     return tools
   }
 
@@ -591,27 +592,27 @@ export namespace SessionPrompt {
       const meta = st.metadata || {}
       const freshMeta = meta._fresh
       if (!freshMeta?.enabled || !freshMeta.key) continue
-      
+
       // Check if this tool type supports refresh using populated toolMeta
       const toolMetaInfo = toolMeta[p.tool]
       if (!toolMetaInfo?.enableRefresh) continue
-      
+
       // Check if refresh is enabled for this specific tool call
       const shouldRefresh = toolMetaInfo.enableRefresh(st.input)
       if (!shouldRefresh) continue
-      
+
       try {
         const toolList = await ToolRegistry.tools("", "") // provider/model not needed for re-run context
-        const toolInfo = toolList.find(t => t.id === p.tool)
+        const toolInfo = toolList.find((t) => t.id === p.tool)
         if (!toolInfo) throw new Error("tool missing")
-        
+
         const result = await toolInfo.execute(st.input, {
           sessionID,
           abort: new AbortController().signal,
           messageID: p.messageID,
           callID: p.callID,
           agent: "refresh",
-          metadata: () => {}
+          metadata: () => {},
         } as any)
         st.output = result.output
         if (!st.metadata) st.metadata = {}
@@ -1055,7 +1056,9 @@ export namespace SessionPrompt {
                   const metaFns = toolMeta[match.tool]
                   let key: string | undefined
                   if (metaFns?.key) {
-                    try { key = metaFns.key(value.input) } catch {}
+                    try {
+                      key = metaFns.key(value.input)
+                    } catch {}
                   }
                   if (key) {
                     // find previous completed tool parts in session with same key (excluding current running part)
@@ -1067,7 +1070,7 @@ export namespace SessionPrompt {
                           const st: any = p.state
                           if (st.status === "completed" && !st.time.compacted) {
                             st.output = "[Superseded]"
-                            st.metadata = { ...(st.metadata||{}), _supersededBy: match.id }
+                            st.metadata = { ...(st.metadata || {}), _supersededBy: match.id }
                             await Session.updatePart(p)
                           }
                         }
@@ -1076,8 +1079,11 @@ export namespace SessionPrompt {
                     metadata = { ...metadata, _key: key }
                   }
                   // auto-refresh flag attach
-                  if (key && (metaFns?.enableRefresh?.(value.input))) {
-                    metadata = { ...metadata, _fresh: { enabled: true, key, lastRun: Date.now(), failures: 0, mode: "auto" } }
+                  if (key && metaFns?.enableRefresh?.(value.input)) {
+                    metadata = {
+                      ...metadata,
+                      _fresh: { enabled: true, key, lastRun: Date.now(), failures: 0, mode: "auto" },
+                    }
                   }
                   await Session.updatePart({
                     ...match,

@@ -34,7 +34,6 @@ type Section = {
   body: string[]
 }
 
-
 function parseMultiFileOutput(text: string): Section[] {
   const sections: Section[] = []
   let current: Section | null = null
@@ -113,20 +112,22 @@ export const MultiEditTool = Tool.define("multiedit", {
     let sections: Section[] = []
     let attempt = 0
     let raw = ""
-  let expanded = false
-  let lastReport = ""
+    let expanded = false
+    let lastReport = ""
     const expansionLog: { attempt: number; added: string[] }[] = []
-  while (attempt < MAX_EXPANSION_ATTEMPTS) {
+    while (attempt < MAX_EXPANSION_ATTEMPTS) {
       // Build context messages for this attempt
       const fileMessages: { role: "user"; content: string }[] = []
       for (const rel of baseRelevant) {
         try {
           const abs = validatePath(rel)
-            ;
           const content = await readFileIfExists(abs)
           if (content != null)
-            fileMessages.push({ role: "user", content: `// File: ${path.relative(Instance.directory, abs)}\n${content}` })
-        } catch { }
+            fileMessages.push({
+              role: "user",
+              content: `// File: ${path.relative(Instance.directory, abs)}\n${content}`,
+            })
+        } catch {}
       }
       const finalUser = { role: "user" as const, content: `## Instructions\n${params.instructions}` }
 
@@ -138,11 +139,16 @@ export const MultiEditTool = Tool.define("multiedit", {
       })
       raw = gen.text
 
-  const { report, codePart } = parseReportAndCodeSections(raw)
+      const { report, codePart } = parseReportAndCodeSections(raw)
       if (report) lastReport = report
       sections = parseMultiFileOutput(codePart)
       if (sections.length === 0) {
-        if (attempt === 0) return { title: "multiedit", metadata: { results: [] as any[], expanded: false, expansionLog: [], summary: lastReport }, output: lastReport || "No changes" }
+        if (attempt === 0)
+          return {
+            title: "multiedit",
+            metadata: { results: [] as any[], expanded: false, expansionLog: [], summary: lastReport },
+            output: lastReport || "No changes",
+          }
         break
       }
 
@@ -171,7 +177,10 @@ export const MultiEditTool = Tool.define("multiedit", {
       attempt++
       continue
     }
-    if (attempt >= MAX_EXPANSION_ATTEMPTS && sections.some(s => ["modify", "rename", "delete"].includes(s.action) && !baseRelevant.has(s.file))) {
+    if (
+      attempt >= MAX_EXPANSION_ATTEMPTS &&
+      sections.some((s) => ["modify", "rename", "delete"].includes(s.action) && !baseRelevant.has(s.file))
+    ) {
       throw new Error("Exceeded max multiedit expansion attempts while resolving off-context files")
     }
 
@@ -185,7 +194,10 @@ export const MultiEditTool = Tool.define("multiedit", {
       if (action === "rename" && !section.to) throw new Error(`Rename missing to: path for ${relPath}`)
       const targetAbs = section.to ? validatePath(section.to) : undefined
       // Safety check still: ensure after expansion the file is in context for destructive ops
-      if (["modify", "rename", "delete"].includes(action) && ![...baseRelevant].some(r => path.normalize(r) === path.normalize(relPath))) {
+      if (
+        ["modify", "rename", "delete"].includes(action) &&
+        ![...baseRelevant].some((r) => path.normalize(r) === path.normalize(relPath))
+      ) {
         throw new Error(`Internal: file ${relPath} missing from expanded context set`)
       }
 
@@ -264,7 +276,8 @@ export const MultiEditTool = Tool.define("multiedit", {
       }
     }
 
-    const summary = lastReport || (expanded ? "Multi-file edits applied (context expanded)" : "Multi-file edits applied")
+    const summary =
+      lastReport || (expanded ? "Multi-file edits applied (context expanded)" : "Multi-file edits applied")
     return { title: "multiedit", metadata: { results, expanded: !!expanded, expansionLog, summary }, output: summary }
   },
 })
