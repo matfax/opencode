@@ -22,7 +22,7 @@ import { Template } from "../util/template"
 import { generateText } from "ai"
 // Shared apply & utility functions
 import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite, trimDiff } from "../util/apply"
-import { extractCodeFromMarkdown } from "../util/markdown"
+import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../util/markdown"
 import { Permission } from "../permission"
 import { createTwoFilesPatch } from "diff"
 // Re-export replace for existing tests that import from this module
@@ -31,52 +31,14 @@ export { replace } from "../util/apply"
 // Bun runtime type declaration
 declare const Bun: any
 
-// Parse edit agent output to extract report and code
+// Adapter to keep existing variable names when switching to shared parser
 function parseEditOutput(output: string): { summary: string; code: string } {
-  const lines = output.split("\n")
-  let reportStart = -1
-  let codeStart = -1
-
-  // Find section markers (relaxed matching)
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim().toLowerCase()
-    if (line.includes("report") && (line.startsWith("#") || line.includes(":"))) {
-      reportStart = i + 1
-    } else if (line.includes("code") && (line.startsWith("#") || line.includes(":"))) {
-      codeStart = i + 1
-      break
-    }
-  }
-
-  // Extract report
-  let summary = ""
-  if (reportStart > -1 && codeStart > -1) {
-    summary = lines
-      .slice(reportStart, codeStart - 1)
-      .filter((line) => !line.trim().startsWith("##"))
-      .join("\n")
-      .trim()
-  }
-
-  // Extract code
-  let code = ""
-  if (codeStart > -1) {
-    code = lines.slice(codeStart).join("\n").trim()
-
-    // Extract code from markdown if wrapped in code blocks
-    code = extractCodeFromMarkdown(code)
-  }
-
-  // Fallback: if no structured format found, treat entire output as code
-  if (!summary && !code) {
+  const { report, codePart } = parseReportAndCodeSections(output)
+  if (!report && !codePart) {
     const extractedCode = extractCodeFromMarkdown(output)
-    return {
-      summary: "Code modifications applied",
-      code: extractedCode,
-    }
+    return { summary: "Code modifications applied", code: extractedCode }
   }
-
-  return { summary, code }
+  return { summary: report, code: codePart }
 }
 
 export const EditTool = Tool.define("edit", {

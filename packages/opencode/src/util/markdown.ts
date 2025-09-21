@@ -34,3 +34,23 @@ export function extractCodeFromMarkdown(text: string): string {
 
   return normalized
 }
+
+// Generic parser to extract a leading report (## Report) and a code section (## Code)
+// Falls back gracefully if headings are absent. Returns raw report (no markdown fence stripping)
+// and codePart with code fences removed via extractCodeFromMarkdown.
+export function parseReportAndCodeSections(raw: string): { report: string; codePart: string } {
+  if (!raw) return { report: "", codePart: "" }
+  const lower = raw.toLowerCase()
+  const reportIdx = lower.indexOf("## report")
+  const codeIdx = lower.indexOf("## code")
+  let report = ""
+  let codePart = raw
+  if (reportIdx !== -1 && codeIdx !== -1 && codeIdx > reportIdx) {
+    report = raw.slice(reportIdx + "## report".length, codeIdx).trim()
+    codePart = raw.slice(codeIdx + "## code".length).trim()
+  } else if (codeIdx !== -1) {
+    codePart = raw.slice(codeIdx + "## code".length).trim()
+  }
+  codePart = extractCodeFromMarkdown(codePart)
+  return { report, codePart }
+}

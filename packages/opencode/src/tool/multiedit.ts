@@ -16,7 +16,7 @@ import { Bus } from "../bus"
 import { FileTime } from "../file/time"
 import { Permission } from "../permission"
 import fs from "fs/promises"
-import { extractCodeFromMarkdown } from "../util/markdown"
+import { parseReportAndCodeSections } from "../util/markdown"
 // @ts-ignore
 import MULTIEDIT_TEMPLATE from "./support/multiedit.txt"
 // @ts-ignore
@@ -33,6 +33,7 @@ type Section = {
   to?: string
   body: string[]
 }
+
 
 function parseMultiFileOutput(text: string): Section[] {
   const sections: Section[] = []
@@ -96,19 +97,10 @@ export const MultiEditTool = Tool.define("multiedit", {
       .filter((l) => l.length > 0)
     const systemMsgs = systemLines.map((l) => ({ role: "system" as const, content: l }))
 
-    // Gather context files
-    const ctxFiles: string[] = []
-    if (params.relevantFiles) ctxFiles.push(...params.relevantFiles)
-    const fileMessages = [] as { role: "user"; content: string }[]
-    for (const rel of ctxFiles) {
-      try {
-        const abs = validatePath(rel)
-        const content = await readFileIfExists(abs)
-        if (content != null)
-          fileMessages.push({ role: "user", content: `// File: ${path.relative(Instance.directory, abs)}\n${content}` })
-      } catch {}
-    }
-    const finalUser = { role: "user" as const, content: `## Instructions\n${params.instructions}` }
+    const MAX_EXPANSION_ATTEMPTS = 3
+    const MAX_CONTEXT_FILES = 30
+    const baseRelevant = new Set<string>(params.relevantFiles || [])
+    const attemptedFiles = new Set<string>([...baseRelevant])
 
     const editAgent = await Agent.get("multiedit")
     const useModel = editAgent?.model
@@ -118,27 +110,69 @@ export const MultiEditTool = Tool.define("multiedit", {
           return Provider.getModel(def.providerID, def.modelID)
         })()
 
-    const gen = await generateText({
-      model: useModel.language,
-      temperature: 0,
-      maxRetries: 5,
-      messages: [...systemMsgs, ...fileMessages, finalUser],
-    })
-    const raw = gen.text
+    let sections: Section[] = []
+    let attempt = 0
+    let raw = ""
+  let expanded = false
+  let lastReport = ""
+    const expansionLog: { attempt: number; added: string[] }[] = []
+  while (attempt < MAX_EXPANSION_ATTEMPTS) {
+      // Build context messages for this attempt
+      const fileMessages: { role: "user"; content: string }[] = []
+      for (const rel of baseRelevant) {
+        try {
+          const abs = validatePath(rel)
+            ;
+          const content = await readFileIfExists(abs)
+          if (content != null)
+            fileMessages.push({ role: "user", content: `// File: ${path.relative(Instance.directory, abs)}\n${content}` })
+        } catch { }
+      }
+      const finalUser = { role: "user" as const, content: `## Instructions\n${params.instructions}` }
 
-    // Split report and code (reuse simple heuristic)
-    const lower = raw.toLowerCase()
-    let codePart = raw
-    if (lower.includes("## code")) {
-      const idx = lower.indexOf("## code")
-      codePart = raw.slice(idx)
+      const gen = await generateText({
+        model: useModel.language,
+        temperature: 0,
+        maxRetries: 5,
+        messages: [...systemMsgs, ...fileMessages, finalUser],
+      })
+      raw = gen.text
+
+  const { report, codePart } = parseReportAndCodeSections(raw)
+      if (report) lastReport = report
+      sections = parseMultiFileOutput(codePart)
+      if (sections.length === 0) {
+        if (attempt === 0) return { title: "multiedit", metadata: { results: [] as any[], expanded: false, expansionLog: [], summary: lastReport }, output: lastReport || "No changes" }
+        break
+      }
+
+      // Detect off-context files
+      const offContext = new Set<string>()
+      for (const s of sections) {
+        if (["modify", "rename", "delete"].includes(s.action)) {
+          if (!baseRelevant.has(s.file)) offContext.add(s.file)
+          if (s.action === "rename" && s.to && !baseRelevant.has(s.file)) offContext.add(s.file) // source file must be known
+        }
+      }
+      if (offContext.size === 0) break
+      // Add them if under limits
+      const newlyAdded: string[] = []
+      for (const f of offContext) {
+        if (baseRelevant.size >= MAX_CONTEXT_FILES) break
+        if (!attemptedFiles.has(f)) {
+          baseRelevant.add(f)
+          attemptedFiles.add(f)
+          newlyAdded.push(f)
+        }
+      }
+      if (newlyAdded.length === 0) break
+      expanded = true
+      expansionLog.push({ attempt: attempt + 1, added: newlyAdded })
+      attempt++
+      continue
     }
-    codePart = extractCodeFromMarkdown(codePart)
-
-    // Parse sections
-    const sections = parseMultiFileOutput(codePart)
-    if (sections.length === 0) {
-      return { title: "multiedit", metadata: { results: [] }, output: "No changes" }
+    if (attempt >= MAX_EXPANSION_ATTEMPTS && sections.some(s => ["modify", "rename", "delete"].includes(s.action) && !baseRelevant.has(s.file))) {
+      throw new Error("Exceeded max multiedit expansion attempts while resolving off-context files")
     }
 
     const results: any[] = []
@@ -150,6 +184,10 @@ export const MultiEditTool = Tool.define("multiedit", {
       let action = section.action
       if (action === "rename" && !section.to) throw new Error(`Rename missing to: path for ${relPath}`)
       const targetAbs = section.to ? validatePath(section.to) : undefined
+      // Safety check still: ensure after expansion the file is in context for destructive ops
+      if (["modify", "rename", "delete"].includes(action) && ![...baseRelevant].some(r => path.normalize(r) === path.normalize(relPath))) {
+        throw new Error(`Internal: file ${relPath} missing from expanded context set`)
+      }
 
       if (action === "create") {
         if (existingContent != null) throw new Error(`File already exists: ${relPath}`)
@@ -226,6 +264,7 @@ export const MultiEditTool = Tool.define("multiedit", {
       }
     }
 
-    return { title: "multiedit", metadata: { results }, output: "Multi-file edits applied" }
+    const summary = lastReport || (expanded ? "Multi-file edits applied (context expanded)" : "Multi-file edits applied")
+    return { title: "multiedit", metadata: { results, expanded: !!expanded }, output: summary }
   },
 })

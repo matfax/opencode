@@ -36,7 +36,7 @@ Reporting:
 Provide your response in this format:
 
 ## Report
-[Brief natural language report of what was changed for the primary agent's context. The length should be proportional to the complexity of the changes, typically 3-5 sentences. Include any assumptions made or issues encountered.]
+[A list of changes in natural language. The length should be proportional to the complexity of the changes and number of files. Include any assumptions made or issues encountered.]
 
 ## Code
 {input:example}
