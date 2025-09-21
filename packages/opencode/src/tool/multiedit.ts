@@ -76,7 +76,6 @@ export const MultiEditTool = Tool.define("multiedit", {
     relevantFiles: z.array(z.string()).optional().describe("Optional list of context files"),
   }),
   async execute(params, ctx) {
-
     if (!params.instructions || params.instructions.trim() === "") throw new Error("instructions required")
 
     // Determine format (snippet or diff) based on apply model presence

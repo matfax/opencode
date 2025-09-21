@@ -185,9 +185,7 @@ export const EditTool = Tool.define("edit", {
     const contentNew = result.contentNew ?? contentOld
 
     // Build diff (applyEditOutput/diffEditOutput already returns diff, but ensure trimmed) and ask permission if required
-    const diff = trimDiff(
-      result.diff || createTwoFilesPatch(filePath, filePath, contentOld, contentNew),
-    )
+    const diff = trimDiff(result.diff || createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
     const agent = await Agent.get(ctx.agent)
     if (agent?.permission.edit === "ask") {
       await Permission.ask({
@@ -205,7 +203,7 @@ export const EditTool = Tool.define("edit", {
     return {
       metadata: {
         diagnostics,
-  diff: diff,
+        diff: diff,
       },
       title: `${path.relative(Instance.worktree, filePath)}`,
       output: summary || "Edit applied successfully",
