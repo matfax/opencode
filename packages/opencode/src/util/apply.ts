@@ -91,14 +91,11 @@ export async function applyEditOutput(
         const def = await Provider.defaultModel()
         return Provider.getModel(def.providerID, def.modelID)
       })()
-  const rawPrompt = applyAgent?.prompt ?? ""
-  const system = await Template.substitute(rawPrompt)
 
   let contentNew: string | undefined
   // Provider/model specific application
-  // Morph: model-specific (can appear under multiple providers)
-  if (modelInfo.modelID.startsWith("morph-v3")) {
-    // morph style: single user message with xml-like tags
+  if (modelInfo.modelID.includes("morph")) {
+    // Morph expects single user message with instruction/code/update tags
     const applyMsg = `<instruction>${summary || "Apply edit"}</instruction>\n<code>${contentOld}</code>\n<update>${editOutput}</update>`
     const gen = await generateText({
       model: modelInfo.language,
@@ -107,8 +104,8 @@ export async function applyEditOutput(
       messages: [{ role: "user", content: applyMsg }],
     })
     contentNew = extractCodeFromMarkdown(gen.text)
-  } else if (modelInfo.providerID === "relace" && modelInfo.modelID === "relace-apply") {
-    // relace apply endpoint expects initialCode + editSnippet JSON; treat editOutput as snippet
+  } else if (modelInfo.providerID === "relace" && modelInfo.modelID === "apply") {
+    // Relace apply endpoint (no chat prompt semantics)
     try {
       const endpoint = (modelInfo.info.options && (modelInfo.info.options as any)["endpoint"]) || "/v1/code/apply"
       const providerApi = (modelInfo.info as any).provider && (modelInfo.info as any).provider.api
@@ -127,24 +124,26 @@ export async function applyEditOutput(
         contentNew = json.mergedCode || json.code || json.result || contentOld
       }
     } catch {
-      // swallow and fallback
+      // swallow; relace failure does NOT fall back to generic path per spec request
     }
-  }
-
-  if (!contentNew) {
-    const userContent = `Apply the following changes to the original file content and return ONLY the full updated file content.\n\nFile: ${path.relative(Instance.directory, filePath)}\n\n--- ORIGINAL START ---\n${contentOld}\n--- ORIGINAL END ---\n\n--- CHANGES START ---\n${editOutput}\n--- CHANGES END ---`
+  } else {
+    // Generic fallback ONLY when neither morph nor relace
+    const promptText = applyAgent?.prompt ? (await Template.substitute(applyAgent.prompt)).trim() : ""
+    const instruction = promptText ? promptText + "\n\n" : ""
+    const userContent = `${instruction}File: ${path.relative(Instance.directory, filePath)}\n\n--- ORIGINAL START ---\n${contentOld}\n--- ORIGINAL END ---\n\n--- CHANGES START ---\n${editOutput}\n--- CHANGES END ---`
     const gen = await generateText({
       model: modelInfo.language,
       temperature: 0,
       maxRetries: 5,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: userContent },
-      ],
+      messages: [{ role: "user", content: userContent }],
     })
     contentNew = extractCodeFromMarkdown(gen.text)
   }
 
+  // Ensure we have a concrete new content (fallback to old if all strategies failed)
+  if (contentNew === undefined || contentNew === "") {
+    contentNew = contentOld
+  }
   // Create diff for permission check
   const diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
 
