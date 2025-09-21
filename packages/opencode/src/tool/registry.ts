@@ -161,6 +161,8 @@ export namespace ToolRegistry {
       result["edit"] = false
       result["patch"] = false
       result["write"] = false
+      result["multiedit"] = false
+      result["remove"] = false
     }
     if (agent.permission.bash["*"] === "deny" && Object.keys(agent.permission.bash).length === 1) {
       result["bash"] = false
