@@ -22,8 +22,10 @@ import { Provider } from "../provider/provider"
 import { Template } from "../util/template"
 import { generateText } from "ai"
 // Shared apply & utility functions
-import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite } from "../util/apply"
+import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite, trimDiff } from "../util/apply"
 import { extractCodeFromMarkdown } from "../util/markdown"
+import { Permission } from "../permission"
+import { createTwoFilesPatch } from "diff"
 // Re-export replace for existing tests that import from this module
 export { replace } from "../util/apply"
 
@@ -181,12 +183,29 @@ export const EditTool = Tool.define("edit", {
       : await diffEditOutput(code, ctx, filePath, contentOld)
 
     const contentNew = result.contentNew ?? contentOld
+
+    // Build diff (applyEditOutput/diffEditOutput already returns diff, but ensure trimmed) and ask permission if required
+    const diff = trimDiff(
+      result.diff || createTwoFilesPatch(filePath, filePath, contentOld, contentNew),
+    )
+    const agent = await Agent.get(ctx.agent)
+    if (agent?.permission.edit === "ask") {
+      await Permission.ask({
+        type: "edit",
+        sessionID: ctx.sessionID,
+        messageID: ctx.messageID,
+        callID: ctx.callID,
+        title: "Edit this file: " + filePath,
+        metadata: { filePath, diff },
+      })
+    }
+
     const { diagnostics } = await handleDiagnosticsAndFileWrite(filePath, contentNew, ctx)
 
     return {
       metadata: {
         diagnostics,
-        diff: result.diff,
+  diff: diff,
       },
       title: `${path.relative(Instance.worktree, filePath)}`,
       output: summary || "Edit applied successfully",
