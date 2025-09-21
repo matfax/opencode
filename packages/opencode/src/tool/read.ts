@@ -18,6 +18,13 @@ export const ReadTool = Tool.define("read", {
     offset: z.coerce.number().describe("The line number to start reading from (0-based)").optional(),
     limit: z.coerce.number().describe("The number of lines to read (defaults to 2000)").optional(),
   }),
+  key: (p) => {
+    return ["read", p.filePath].join("|")
+  },
+  enableRefresh: (p) => {
+    const lim = p.limit ?? DEFAULT_READ_LIMIT
+    return lim <= DEFAULT_READ_LIMIT
+  },
   async execute(params, ctx) {
     let filepath = params.filePath
     if (!path.isAbsolute(filepath)) {

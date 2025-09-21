@@ -51,6 +51,8 @@ import { $ } from "bun"
 
 export namespace SessionPrompt {
   const log = Log.create({ service: "session.prompt" })
+  // Stores key/enableRefresh lambdas for currently resolved tools (per prompt cycle)
+  const toolMeta: Record<string, { key?: (args: any) => string | undefined; enableRefresh?: (args: any) => boolean }> = {}
   export const OUTPUT_TOKEN_MAX = 32_000
 
   export const Event = {
@@ -430,6 +432,8 @@ export namespace SessionPrompt {
     for (const item of await ToolRegistry.tools(input.providerID, input.modelID)) {
       if (Wildcard.all(item.id, enabledTools) === false) continue
       const schema = ProviderTransform.schema(input.providerID, input.modelID, z.toJSONSchema(item.parameters))
+      // store key & enableRefresh for later event handling (tool-result)
+      toolMeta[item.id] = { key: (item as any).key, enableRefresh: (item as any).enableRefresh }
       tools[item.id] = tool({
         id: item.id as any,
         description: item.description,
@@ -533,7 +537,93 @@ export namespace SessionPrompt {
       }
       tools[key] = item
     }
+    
+    // After tools are resolved and toolMeta is populated, refresh fresh-enabled parts
+    await refreshFreshParts(input.sessionID)
+    
     return tools
+  }
+
+  async function refreshFreshParts(sessionID: string) {
+    const msgs = await Session.messages(sessionID)
+    const candidates: MessageV2.ToolPart[] = []
+    for (const m of msgs) {
+      for (const p of m.parts) {
+        if (p.type !== "tool") continue
+        const st: any = p.state
+        if (st.status !== "completed") continue
+        const meta = st.metadata || {}
+        const fresh = meta._fresh
+        if (!fresh?.enabled) continue
+        if (st.time?.compacted) {
+          // disable if compacted
+          fresh.enabled = false
+          fresh.reason = "compacted"
+          await Session.updatePart(p)
+          continue
+        }
+        candidates.push(p as MessageV2.ToolPart)
+      }
+    }
+    // Keep only newest per key
+    const newest = new Map<string, MessageV2.ToolPart>()
+    for (const p of candidates) {
+      const st: any = p.state
+      if (st.status !== "completed" || !st.time?.start) continue
+      const key = st.metadata?._fresh?.key
+      if (!key) continue
+      const prev = newest.get(key)
+      if (!prev || (prev.state as any).time.start < st.time.start) newest.set(key, p)
+    }
+    for (const p of candidates) {
+      const st: any = p.state
+      const key = st.metadata?._fresh?.key
+      if (!key) continue
+      if (newest.get(key) !== p) {
+        st.metadata._fresh.enabled = false
+        st.metadata._fresh.reason = "superseded"
+        await Session.updatePart(p)
+      }
+    }
+    // Refresh sequentially to limit overhead
+    for (const p of newest.values()) {
+      const st: any = p.state
+      const meta = st.metadata || {}
+      const freshMeta = meta._fresh
+      if (!freshMeta?.enabled || !freshMeta.key) continue
+      
+      // Check if this tool type supports refresh using populated toolMeta
+      const toolMetaInfo = toolMeta[p.tool]
+      if (!toolMetaInfo?.enableRefresh) continue
+      
+      // Check if refresh is enabled for this specific tool call
+      const shouldRefresh = toolMetaInfo.enableRefresh(st.input)
+      if (!shouldRefresh) continue
+      
+      try {
+        const toolList = await ToolRegistry.tools("", "") // provider/model not needed for re-run context
+        const toolInfo = toolList.find(t => t.id === p.tool)
+        if (!toolInfo) throw new Error("tool missing")
+        
+        const result = await toolInfo.execute(st.input, {
+          sessionID,
+          abort: new AbortController().signal,
+          messageID: p.messageID,
+          callID: p.callID,
+          agent: "refresh",
+          metadata: () => {}
+        } as any)
+        st.output = result.output
+        if (!st.metadata) st.metadata = {}
+        st.metadata._fresh.lastRun = Date.now()
+        await Session.updatePart(p)
+      } catch (err: any) {
+        st.metadata._fresh.enabled = false
+        st.output = "[Auto refresh disabled: " + (err?.message || "error") + "]"
+        st.metadata._fresh.reason = "error"
+        await Session.updatePart(p)
+      }
+    }
   }
 
   async function createUserMessage(input: PromptInput) {
@@ -960,13 +1050,42 @@ export namespace SessionPrompt {
               case "tool-result": {
                 const match = toolcalls[value.toolCallId]
                 if (match && match.state.status === "running") {
+                  // supersede logic: compute key if tool had one
+                  let metadata = value.output.metadata || {}
+                  const metaFns = toolMeta[match.tool]
+                  let key: string | undefined
+                  if (metaFns?.key) {
+                    try { key = metaFns.key(value.input) } catch {}
+                  }
+                  if (key) {
+                    // find previous completed tool parts in session with same key (excluding current running part)
+                    const msgs = await Session.messages(match.sessionID)
+                    for (const m of msgs) {
+                      for (const p of m.parts) {
+                        if (p.id === match.id) continue
+                        if (p.type === "tool" && (p.state as any).metadata && (p.state as any).metadata._key === key) {
+                          const st: any = p.state
+                          if (st.status === "completed" && !st.time.compacted) {
+                            st.output = "[Superseded]"
+                            st.metadata = { ...(st.metadata||{}), _supersededBy: match.id }
+                            await Session.updatePart(p)
+                          }
+                        }
+                      }
+                    }
+                    metadata = { ...metadata, _key: key }
+                  }
+                  // auto-refresh flag attach
+                  if (key && (metaFns?.enableRefresh?.(value.input))) {
+                    metadata = { ...metadata, _fresh: { enabled: true, key, lastRun: Date.now(), failures: 0, mode: "auto" } }
+                  }
                   await Session.updatePart({
                     ...match,
                     state: {
                       status: "completed",
                       input: value.input,
                       output: value.output.output,
-                      metadata: value.output.metadata,
+                      metadata,
                       title: value.output.title,
                       time: {
                         start: match.state.time.start,

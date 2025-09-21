@@ -103,7 +103,12 @@ export const SymbolTool = Tool.define("symbol", {
     limit: z.number().describe("Max workspace symbols to scan (default 200, 0 = unlimited)").optional().default(200),
     context: z.number().describe("Extra context lines around definition").optional().default(0),
     numbering: z.boolean().describe("Prefix lines with numbers (default false)").optional(),
+    autorefresh: z.boolean().describe("Automatically refresh results when code changes").optional(),
   }),
+  key: (p) => {
+    return ["symbol", p.name].join("|")
+  },
+  enableRefresh: (p) => !!p.autorefresh, // heuristic: only auto-refresh fuzzy searches
   async execute(args) {
     // Initialize LSP and ensure servers are started for workspace file types
     const lspState = await LSP.init()

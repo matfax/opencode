@@ -13,6 +13,12 @@ export const DiffTool = Tool.define("diff", {
     context: z.number().int().optional().describe("Number of context lines (passes -U to git)").refine(n => n === undefined || n >= 0),
     nameOnly: z.boolean().optional().describe("Show only changed file names (git diff --name-only)"),
   }),
+  key: (p) => {
+    const mode = p.commit ? "commit" : p.combined ? "combined" : "working"
+    const name = p.nameOnly ? 1 : 0
+    return ["diff", mode, name, p.commit || "-"] .join("|")
+  },
+  enableRefresh: (p) => !p.commit,
   async execute(params, _ctx) {
     // Ensure project uses git and git binary is available
     const project = Instance.project

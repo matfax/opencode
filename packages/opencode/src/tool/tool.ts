@@ -18,6 +18,10 @@ export namespace Tool {
     init: () => Promise<{
       description: string
       parameters: Parameters
+      // Optional stable key builder for supersede/manual refresh
+      key?: (args: z.infer<Parameters>) => string | undefined
+      // Optional auto-refresh enabler; only used if key() present
+      enableRefresh?: (args: z.infer<Parameters>) => boolean
       execute(
         args: z.infer<Parameters>,
         ctx: Context,
