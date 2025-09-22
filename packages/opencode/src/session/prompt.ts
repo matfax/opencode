@@ -51,9 +51,8 @@ import { $ } from "bun"
 
 export namespace SessionPrompt {
   const log = Log.create({ service: "session.prompt" })
-  // Stores key/enableRefresh lambdas for currently resolved tools (per prompt cycle)
-  const toolMeta: Record<string, { key?: (args: any) => string | undefined; enableRefresh?: (args: any) => boolean }> =
-    {}
+  // Stores key/enableRefresh/expireAfter lambdas for currently resolved tools (per prompt cycle)
+  const toolMeta: Record<string, { key?: (args: any) => string | undefined; enableRefresh?: (args: any) => boolean; expireAfter?: (args: any) => number | undefined }> = {}
   export const OUTPUT_TOKEN_MAX = 32_000
 
   export const Event = {
@@ -433,8 +432,8 @@ export namespace SessionPrompt {
     for (const item of await ToolRegistry.tools(input.providerID, input.modelID)) {
       if (Wildcard.all(item.id, enabledTools) === false) continue
       const schema = ProviderTransform.schema(input.providerID, input.modelID, z.toJSONSchema(item.parameters))
-      // store key & enableRefresh for later event handling (tool-result)
-      toolMeta[item.id] = { key: (item as any).key, enableRefresh: (item as any).enableRefresh }
+      // store key & enableRefresh & expireAfter for later event handling (tool-result)
+      toolMeta[item.id] = { key: (item as any).key, enableRefresh: (item as any).enableRefresh, expireAfter: (item as any).expireAfter }
       tools[item.id] = tool({
         id: item.id as any,
         description: item.description,
@@ -539,7 +538,8 @@ export namespace SessionPrompt {
       tools[key] = item
     }
 
-    // After tools are resolved and toolMeta is populated, refresh fresh-enabled parts
+    // After tools are resolved and toolMeta is populated, process expiration then refresh
+    await expireOldParts(input.sessionID)
     await refreshFreshParts(input.sessionID)
 
     return tools
@@ -622,6 +622,43 @@ export namespace SessionPrompt {
         st.metadata._fresh.enabled = false
         st.output = "[Auto refresh disabled: " + (err?.message || "error") + "]"
         st.metadata._fresh.reason = "error"
+        await Session.updatePart(p)
+      }
+    }
+  }
+
+  async function expireOldParts(sessionID: string) {
+    const msgs = await Session.messages(sessionID)
+    const totalMessages = msgs.length
+    
+    for (const m of msgs) {
+      const messageAge = totalMessages - msgs.findIndex(msg => msg.info.id === m.info.id)
+      
+      for (const p of m.parts) {
+        if (p.type !== "tool") continue
+        const st: any = p.state
+        if (st.status !== "completed") continue
+        
+        // Check if this tool type has expiration configured
+        const toolMetaInfo = toolMeta[p.tool]
+        if (!toolMetaInfo?.expireAfter) continue
+        
+        // Get expiration threshold for this specific tool call
+        const expirationThreshold = toolMetaInfo.expireAfter(st.input)
+        if (!expirationThreshold || messageAge <= expirationThreshold) continue
+        
+        // Expire the output while keeping metadata
+        if (!st.metadata) st.metadata = {}
+        if (!st.metadata._expiration) {
+          st.metadata._expiration = {
+            expiredAt: Date.now(),
+            originalOutputLength: st.output?.length || 0,
+            messageAge: messageAge,
+            threshold: expirationThreshold
+          }
+        }
+        
+        st.output = `[Expired after ${expirationThreshold} messages - ${st.metadata._expiration.originalOutputLength} chars removed]`
         await Session.updatePart(p)
       }
     }

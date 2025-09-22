@@ -22,6 +22,8 @@ export namespace Tool {
       key?: (args: z.infer<Parameters>) => string | undefined
       // Optional auto-refresh enabler; only used if key() present
       enableRefresh?: (args: z.infer<Parameters>) => boolean
+      // Optional expiration after N messages; returns message count or undefined for no expiration
+      expireAfter?: (args: z.infer<Parameters>) => number | undefined
       execute(
         args: z.infer<Parameters>,
         ctx: Context,
