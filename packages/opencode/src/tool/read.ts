@@ -5,10 +5,15 @@ import { Tool } from "./tool"
 import { LSP } from "../lsp"
 import { FileTime } from "../file/time"
 import DESCRIPTION from "./read.txt"
+// @ts-ignore
+import FILE_SUMMARY_TEMPLATE from "./support/file-summary.txt"
 import { Filesystem } from "../util/filesystem"
 import { Instance } from "../project/instance"
+import { Agent } from "../agent/agent"
+import { Provider } from "../provider/provider"
+import { generateText } from "ai"
 
-const DEFAULT_READ_LIMIT = 2000
+const DEFAULT_READ_LIMIT = 200
 const MAX_LINE_LENGTH = 2000
 
 export const ReadTool = Tool.define("read", {
@@ -16,14 +21,16 @@ export const ReadTool = Tool.define("read", {
   parameters: z.object({
     filePath: z.string().describe("The path to the file to read"),
     offset: z.coerce.number().describe("The line number to start reading from (0-based)").optional(),
-    limit: z.coerce.number().describe("The number of lines to read (defaults to 2000)").optional(),
+    limit: z.coerce.number().describe("The number of lines to read").optional().default(DEFAULT_READ_LIMIT),
+    autoSummarize: z.boolean().optional().describe("Automatically summarize the file if it exceeds the line limit"),
+    prompt: z.string().optional().describe("Optional instruction for what to focus on in the summary (only used with auto-summarize)"),
   }),
   key: (p) => {
-    return ["read", p.filePath].join("|")
+    return ["read", "a" + (p.autoSummarize ? "1" : "0"), p.filePath].join("|")
   },
   enableRefresh: (p) => {
     const lim = p.limit ?? DEFAULT_READ_LIMIT
-    return lim <= DEFAULT_READ_LIMIT
+    return lim <= DEFAULT_READ_LIMIT && !p.autoSummarize
   },
   async execute(params, ctx) {
     let filepath = params.filePath
@@ -61,7 +68,55 @@ export const ReadTool = Tool.define("read", {
     if (isImage) throw new Error(`This is an image file of type: ${isImage}\nUse a different tool to process images`)
     const isBinary = await isBinaryFile(filepath, file)
     if (isBinary) throw new Error(`Cannot read binary file: ${filepath}`)
+    
     const lines = await file.text().then((text) => text.split("\n"))
+    
+    // Check if auto-summarize should trigger
+    const shouldAutoSummarize = params.autoSummarize && !offset && lines.length > limit
+    
+    if (shouldAutoSummarize) {
+      // Get full file content for summarization
+      const fullContent = lines.join("\n")
+      
+      // Get summary agent configuration
+      const summaryAgent = await Agent.get("summary")
+      const useModel = summaryAgent?.model
+        ? await Provider.getModel(summaryAgent.model.providerID, summaryAgent.model.modelID)
+        : await (async () => {
+            const def = await Provider.defaultModel()
+            return Provider.getModel(def.providerID, def.modelID)
+          })()
+
+      // Generate summary using the support model
+      const userInstruction = params.prompt
+        ? `Please summarize the following file content with focus on: ${params.prompt}\n\nFile: ${path.relative(Instance.worktree, filepath)}\n\n'''${fullContent}'''`
+        : `Please summarize the following file content:\n\nFile: ${path.relative(Instance.worktree, filepath)}\n\n'''${fullContent}'''`
+
+      const summaryGen = await generateText({
+        model: useModel.language,
+        temperature: 0.3,
+        maxRetries: 3,
+        messages: [
+          { role: "system", content: FILE_SUMMARY_TEMPLATE },
+          { role: "user", content: userInstruction },
+        ],
+      })
+
+      // just warms the lsp client
+      LSP.touchFile(filepath, false)
+      FileTime.read(ctx.sessionID, filepath)
+
+      return {
+        title: `Summary: ${path.relative(Instance.worktree, filepath)} (${lines.length} lines)`,
+        output: summaryGen.text,
+        metadata: {
+          preview: lines.slice(0, 20).join("\n"),
+          summarized: true,
+          totalLines: lines.length,
+        },
+      }
+    }
+    
     const raw = lines.slice(offset, offset + limit).map((line) => {
       return line.length > MAX_LINE_LENGTH ? line.substring(0, MAX_LINE_LENGTH) + "..." : line
     })
@@ -87,6 +142,8 @@ export const ReadTool = Tool.define("read", {
       output,
       metadata: {
         preview,
+        summarized: false,
+        totalLines: lines.length,
       },
     }
   },

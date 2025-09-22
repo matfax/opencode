@@ -3,7 +3,7 @@ import { Tool } from "./tool"
 import TurndownService from "turndown"
 import DESCRIPTION from "./webfetch.txt"
 // @ts-ignore
-import SUMMARY_TEMPLATE from "./support/summary.txt"
+import SUMMARY_TEMPLATE from "./support/web-summary.txt"
 import { Config } from "../config/config"
 import { Permission } from "../permission"
 import { Agent } from "../agent/agent"
@@ -34,7 +34,7 @@ export const WebFetchTool = Tool.define("webfetch", {
       .optional()
       .describe("Optional instruction for what to focus on in the summary (only used with summary format)"),
   }),
-  key: (p) => ["webfetch", p.url].join("|"),
+  key: (p) => ["webfetch", "f" + p.format, p.url].join("|"),
   enableRefresh: (p) => !!p.autorefresh && p.format !== "summary",
   expireAfter: (p) => (p.autorefresh ? undefined : DEFAULT_EXPIRATION),
   async execute(params, ctx) {

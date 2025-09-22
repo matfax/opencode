@@ -7,6 +7,6 @@ Features:
 
 Usage notes:
   - HTML format and auto-refresh should only be used for accessing the raw content for development purposes
-  - For summary format, use the prompt parameter to specify what to focus on in the summary
+  - For summary format, provide 1-2 sentences in the prompt describing what information you want to extract from the page
 
 Use this tool when you need to retrieve and analyze web content and online documentation.

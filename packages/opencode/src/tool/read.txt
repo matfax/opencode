@@ -1,14 +1,31 @@
-Reads a file from the local filesystem. You can access any file directly by using this tool.
-Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
+Reads a file from the local filesystem.
+Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid.
+
+Features:
+- Can automatically summarize large files using AI when they exceed the line limit
+- Supports focused summarization based on specific prompts
+- Use on documentation, large code files, or any text files that need analysis
 
 Usage:
 - The filePath parameter must be an absolute path, not a relative path
-- By default, it reads up to 2000 lines starting from the beginning of the file
-- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters
-- Any lines longer than 2000 characters will be truncated
+- By default, it reads up to 200 lines starting from the beginning of the file
+
+Usage for code files:
+- You can optionally specify a line offset and larger limit (especially handy for long files)
+
+Usage for documentation and large files:
+- Set autoSummarize=true to automatically summarize files that exceed the line limit (recommended for documentation and large files)
+- Use the prompt parameter with autoSummarize to focus the summary on specific aspects
+- Any lines longer than 200 characters will be truncated
 - Results are returned using cat -n format, with line numbers starting at 1
 - This tool cannot read binary files, including images
 - You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful. 
 - If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.
+
+Auto-summarization notes:
+- Only triggers when autoSummarize=true, no offset is specified, and file exceeds line limit
+- Summarization uses the full file content for better accuracy
+- Ideal for documentation, README files, large configuration files, and extensive code files
+- Summary includes file structure, key concepts, and important details
 
 Prefer this tool for reading the main subject of the conversation, or files that are not code (e.g. configuration files, documentation, logs).

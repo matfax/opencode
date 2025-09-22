@@ -8,8 +8,6 @@ Your role is to:
 
 Guidelines:
 - Maintain accuracy and preserve important context
-- Use clear, professional language
-- Structure the summary logically with headings if appropriate
 - Include relevant details like references, dates, numbers, or specific facts when important
 - Remove redundant or promotional content
 - Keep the summary concise but comprehensive
