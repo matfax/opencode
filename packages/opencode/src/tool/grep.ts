@@ -5,6 +5,8 @@ import { Ripgrep } from "../file/ripgrep"
 import DESCRIPTION from "./grep.txt"
 import { Instance } from "../project/instance"
 
+const EXPIRE_AFTER = 5 // expire after 5 messages
+
 export const GrepTool = Tool.define("grep", {
   description: DESCRIPTION,
   parameters: z.object({
@@ -12,6 +14,8 @@ export const GrepTool = Tool.define("grep", {
     path: z.string().optional().describe("The directory to search in. Defaults to the current working directory."),
     include: z.string().optional().describe('File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")'),
   }),
+  key: (p) => ["grep", p.path || ".", p.pattern].join("|"),
+  expireAfter: (_p) => EXPIRE_AFTER,
   async execute(params) {
     if (!params.pattern) {
       throw new Error("pattern is required")
