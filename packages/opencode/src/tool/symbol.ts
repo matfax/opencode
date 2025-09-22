@@ -104,7 +104,10 @@ export const SymbolTool = Tool.define("symbol", {
     context: z.number().describe("Extra context lines around definition").optional().default(0),
     numbering: z.boolean().describe("Prefix lines with numbers (default false)").optional(),
     autorefresh: z.boolean().describe("Automatically refresh results when code changes").optional(),
-    fullBody: z.boolean().describe("Include full function/method body instead of just signature (recommended for functions)").optional(),
+    fullBody: z
+      .boolean()
+      .describe("Include full function/method body instead of just signature (recommended for functions)")
+      .optional(),
   }),
   key: (p) => {
     return ["symbol", p.name].join("|")
@@ -171,12 +174,12 @@ export const SymbolTool = Tool.define("symbol", {
         const range = c.range ?? c.location?.range
         const selectionRange = c.selectionRange ?? c.range ?? c.location?.range
         if (!range || !range.start || !range.end) continue
-        
+
         // Use selectionRange (signature) by default, or full range when fullBody is requested
         const useRange = args.fullBody ? range : selectionRange
         const start = useRange.start.line
         const end = useRange.end.line
-        
+
         const from = Math.max(0, start - args.context)
         const to = Math.min(lines.length - 1, end + args.context)
         const slice = lines.slice(from, to + 1)

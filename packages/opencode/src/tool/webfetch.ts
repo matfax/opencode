@@ -22,13 +22,21 @@ export const WebFetchTool = Tool.define("webfetch", {
     format: z
       .enum(["text", "markdown", "html", "summary"])
       .describe("The format to return the content in (text, markdown, html, or summary)"),
-    timeout: z.number().describe("Optional timeout in seconds").optional().default(DEFAULT_TIMEOUT).transform(n => Math.min(n, MAX_TIMEOUT)),
+    timeout: z
+      .number()
+      .describe("Optional timeout in seconds")
+      .optional()
+      .default(DEFAULT_TIMEOUT)
+      .transform((n) => Math.min(n, MAX_TIMEOUT)),
     autorefresh: z.boolean().optional().describe("Automatically refresh the fetched website on subsequent prompts"),
-    prompt: z.string().optional().describe("Optional instruction for what to focus on in the summary (only used with summary format)"),
+    prompt: z
+      .string()
+      .optional()
+      .describe("Optional instruction for what to focus on in the summary (only used with summary format)"),
   }),
   key: (p) => ["webfetch", p.url].join("|"),
   enableRefresh: (p) => !!p.autorefresh && p.format !== "summary",
-  expireAfter: (p) => p.autorefresh ? undefined : DEFAULT_EXPIRATION,
+  expireAfter: (p) => (p.autorefresh ? undefined : DEFAULT_EXPIRATION),
   async execute(params, ctx) {
     // Validate URL
     if (!params.url.startsWith("http://") && !params.url.startsWith("https://")) {
