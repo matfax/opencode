@@ -2,22 +2,33 @@ import z from "zod/v4"
 import { Tool } from "./tool"
 import TurndownService from "turndown"
 import DESCRIPTION from "./webfetch.txt"
+// @ts-ignore
+import SUMMARY_TEMPLATE from "./support/summary.txt"
 import { Config } from "../config/config"
 import { Permission } from "../permission"
+import { Agent } from "../agent/agent"
+import { Provider } from "../provider/provider"
+import { generateText } from "ai"
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
-const DEFAULT_TIMEOUT = 30 * 1000 // 30 seconds
-const MAX_TIMEOUT = 120 * 1000 // 2 minutes
+const DEFAULT_TIMEOUT = 30
+const MAX_TIMEOUT = 120
+const DEFAULT_EXPIRATION = 5 // messages
 
 export const WebFetchTool = Tool.define("webfetch", {
   description: DESCRIPTION,
   parameters: z.object({
-    url: z.string().describe("The URL to fetch content from"),
+    url: z.string().describe("The fully-formed URL to fetch content from"),
     format: z
-      .enum(["text", "markdown", "html"])
-      .describe("The format to return the content in (text, markdown, or html)"),
-    timeout: z.number().describe("Optional timeout in seconds (max 120)").optional(),
+      .enum(["text", "markdown", "html", "summary"])
+      .describe("The format to return the content in (text, markdown, html, or summary)"),
+    timeout: z.number().describe("Optional timeout in seconds").optional().default(DEFAULT_TIMEOUT).transform(n => Math.min(n, MAX_TIMEOUT)),
+    autorefresh: z.boolean().optional().describe("Automatically refresh the fetched website on subsequent prompts"),
+    prompt: z.string().optional().describe("Optional instruction for what to focus on in the summary (only used with summary format)"),
   }),
+  key: (p) => ["webfetch", p.url].join("|"),
+  enableRefresh: (p) => !!p.autorefresh && p.format !== "summary",
+  expireAfter: (p) => p.autorefresh ? undefined : DEFAULT_EXPIRATION,
   async execute(params, ctx) {
     // Validate URL
     if (!params.url.startsWith("http://") && !params.url.startsWith("https://")) {
@@ -39,7 +50,7 @@ export const WebFetchTool = Tool.define("webfetch", {
         },
       })
 
-    const timeout = Math.min((params.timeout ?? DEFAULT_TIMEOUT / 1000) * 1000, MAX_TIMEOUT)
+    const timeout = params.timeout * 1000
 
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), timeout)
@@ -110,6 +121,45 @@ export const WebFetchTool = Tool.define("webfetch", {
         return {
           output: content,
           title,
+          metadata: {},
+        }
+
+      case "summary":
+        // First convert to markdown
+        let markdown = ""
+        if (contentType.includes("text/html")) {
+          markdown = convertHTMLToMarkdown(content)
+        } else {
+          markdown = content
+        }
+
+        // Get summary agent configuration
+        const summaryAgent = await Agent.get("summary")
+        const useModel = summaryAgent?.model
+          ? await Provider.getModel(summaryAgent.model.providerID, summaryAgent.model.modelID)
+          : await (async () => {
+              const def = await Provider.defaultModel()
+              return Provider.getModel(def.providerID, def.modelID)
+            })()
+
+        // Generate summary using the support model
+        const userInstruction = params.prompt
+          ? `Please summarize the following web page content with focus on: ${params.prompt}\n\n'''${markdown}'''`
+          : `Please summarize the following web page content:\n\n'''${markdown}'''`
+
+        const summaryGen = await generateText({
+          model: useModel.language,
+          temperature: 0.3,
+          maxRetries: 3,
+          messages: [
+            { role: "system", content: SUMMARY_TEMPLATE },
+            { role: "user", content: userInstruction },
+          ],
+        })
+
+        return {
+          output: summaryGen.text,
+          title: `Summary: ${params.url}`,
           metadata: {},
         }
 

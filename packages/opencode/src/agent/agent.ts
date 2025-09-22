@@ -127,6 +127,16 @@ export namespace Agent {
         mode: "support",
         builtIn: true,
       },
+      summary: {
+        name: "summary",
+        description: "Specialized agent for summarizing documentation and web content",
+        prompt: "",
+        tools: {},
+        options: {},
+        permission: agentPermission,
+        mode: "support",
+        builtIn: true,
+      },
     }
     for (const [key, value] of Object.entries(cfg.agent ?? {})) {
       if (value.disable) {

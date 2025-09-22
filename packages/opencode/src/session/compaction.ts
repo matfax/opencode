@@ -146,11 +146,10 @@ export namespace SessionCompaction {
     // Build final messages: system context, conversation, then user instructions
     const systemMsgs: ModelMessage[] = system.map((text) => ({ role: "system", content: text }))
     const userMsg: ModelMessage = { role: "user", content: rawTmpl }
-    // Invoke LLM for compaction with retries and temperature=0
     const generated = await generateText({
       maxRetries: 10,
       model: useModel.language,
-      temperature: 0,
+      temperature: 0.3,
       messages: [...systemMsgs, ...convMsgs, userMsg],
     })
     const usageRes = Session.getUsage(useModel.info, generated.usage, generated.providerMetadata)
