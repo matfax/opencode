@@ -33,6 +33,7 @@ export const IGNORE_PATTERNS = [
 ]
 
 const LIMIT = 100
+const EXPIRE_AFTER = 5 // expire after 5 messages
 
 export const ListTool = Tool.define("list", {
   description: DESCRIPTION,
@@ -40,6 +41,8 @@ export const ListTool = Tool.define("list", {
     path: z.string().describe("The absolute path to the directory to list (must be absolute, not relative)").optional(),
     ignore: z.array(z.string()).describe("List of glob patterns to ignore").optional(),
   }),
+  key: (p) => ["list", p.path || "."].join("|"),
+  expireAfter: (_p) => EXPIRE_AFTER,
   async execute(params) {
     const searchPath = path.resolve(Instance.directory, params.path || ".")
 
