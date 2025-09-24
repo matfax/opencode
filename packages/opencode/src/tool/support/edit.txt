@@ -12,7 +12,8 @@ Guidelines:
 - Ensure changes integrate properly with the existing codebase
 - Preserve important comments and documentation
 - You CAN reject an edit by returning an empty code section
-- The generated code MUST be formatted in the specified output format
+- The generated code MUST be formatted in the specified output format on the first invocation
+- On syntax or apply issues, later invocations MAY pick either the specified format OR diff format
 
 Code Output Format: {input:format}
 

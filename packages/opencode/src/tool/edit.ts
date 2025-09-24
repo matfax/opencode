@@ -41,6 +41,9 @@ function parseEditOutput(output: string): { summary: string; code: string } {
   return { summary: report, code: codePart }
 }
 
+// Add retry configuration
+const MAX_RETRIES = 5
+
 export const EditTool = Tool.define("edit", {
   description: DESCRIPTION,
   parameters: z.object({
@@ -84,17 +87,12 @@ export const EditTool = Tool.define("edit", {
           const def = await Provider.defaultModel()
           return Provider.getModel(def.providerID, def.modelID)
         })()
+    // Determine initial format preference
     const applyAgentForFormat = await Agent.get("apply")
     const hasApplyModelForFormat = !!applyAgentForFormat?.model
-    const example = hasApplyModelForFormat ? SNIPPET_EXAMPLE : DIFF_EXAMPLE
-    // Build system messages: keep any system lines from template after substitution
-    const substitutedTemplate = await Template.substituteInputs(await Template.substitute(EDIT_TEMPLATE), {
-      format: hasApplyModelForFormat ? Template.Format.Snippet : Template.Format.Diff,
-      example,
-    })
-    const systemLines = substitutedTemplate.split(/\n+/).filter((l) => l.trim().length > 0)
-    const systemMsgs = systemLines.map((l) => ({ role: "system" as const, content: l }))
-    // Build contextual messages for target + relevant files
+    let currentFormat = hasApplyModelForFormat ? Template.Format.Snippet : Template.Format.Diff
+
+    // Build contextual messages (unchanged across retries)
     const fileMessages = [] as { role: "user"; content: string }[]
     fileMessages.push({
       role: "user",
@@ -110,22 +108,61 @@ export const EditTool = Tool.define("edit", {
         } catch {}
       }
     }
-    // Final user message includes instructions last
     const finalUser = { role: "user" as const, content: `## Instructions\n${params.instructions}` }
-    const editGen = await generateText({
-      model: useModel.language,
-      temperature: 0,
-      maxRetries: 5,
-      messages: [...systemMsgs, ...fileMessages, finalUser],
-    })
-    const editOutput = editGen.text
 
-    // Parse the edit output to extract summary and code
-    const { summary, code } = parseEditOutput(editOutput)
+    // Retry loop for edit-generation
+    let lastError = ""
+    let summary = ""
+    let code = ""
+    let editOutput = ""
+    let isReject = true
 
-    // Detect rejection: empty or semantically empty code block
-    const isReject =
-      !code || code.trim() === "" || /^\s*(?:\[?no\s*changes?]?|n\/a|null|undefined|#|\/\/|<!--).*$/i.test(code.trim())
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      // Build system messages for this format
+      const example = currentFormat === Template.Format.Snippet ? SNIPPET_EXAMPLE : DIFF_EXAMPLE
+      const substituted = await Template.substituteInputs(await Template.substitute(EDIT_TEMPLATE), {
+        format: currentFormat,
+        example,
+      })
+      const systemLines = substituted.split(/\n+/).filter((l) => l.trim().length > 0)
+      const systemMsgs = systemLines.map((l) => ({ role: "system" as const, content: l }))
+
+      // Assemble prompt, injecting prior error if retrying
+      const messages = [...systemMsgs, ...fileMessages]
+      if (attempt > 1 && lastError) {
+        messages.push({ role: "user" as const, content: `Error:\n${lastError}` })
+      }
+      messages.push(finalUser)
+
+      // Call LLM once per attempt
+      const editGen = await generateText({
+        model: useModel.language,
+        temperature: 0,
+        maxRetries: 0,
+        messages,
+      })
+
+      editOutput = editGen.text
+      const parsed = parseEditOutput(editOutput)
+      summary = parsed.summary
+      code = parsed.code
+
+      // Detect diff vs snippet for next iteration or final
+      const looksLikeDiff = /^\s*(diff\s|@@)/m.test(code)
+      if (attempt < MAX_RETRIES) {
+        currentFormat = looksLikeDiff ? Template.Format.Diff : Template.Format.Snippet
+      } else {
+        currentFormat = Template.Format.Diff
+      }
+
+      // Check rejection criteria
+      isReject =
+        !code || code.trim() === "" || /^\s*(?:\[?no\s*changes?]?|n\/a|null|undefined|#|\/\/|<!--)/i.test(code.trim())
+      if (!isReject) break
+
+      lastError = summary || "Empty or invalid response"
+    }
+
     if (isReject) {
       return {
         metadata: { diagnostics: {}, diff: "" },
@@ -134,7 +171,7 @@ export const EditTool = Tool.define("edit", {
       }
     }
 
-    // Check if we have an apply agent configured with a model
+    // Apply the successful edit once
     const applyAgent = await Agent.get("apply")
     const hasApplyModel = applyAgent?.model !== undefined
 
