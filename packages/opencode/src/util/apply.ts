@@ -13,6 +13,16 @@ import { createTwoFilesPatch } from "diff"
 import { Permission } from "../permission"
 import { extractCodeFromMarkdown } from "./markdown"
 
+// Specific error thrown when diagnostics report syntax/type errors after applying an edit
+export class SyntaxErrorAfterEdit extends Error {
+  public fileErrors: any
+  constructor(message: string, fileErrors: any) {
+    super(message)
+    this.name = "SyntaxErrorAfterEdit"
+    this.fileErrors = fileErrors
+  }
+}
+
 export function trimDiff(diff: string): string {
   const lines = diff.split("\n")
   const contentLines = lines.filter(
@@ -59,7 +69,8 @@ export async function handleDiagnosticsAndFileWrite(filePath: string, contentNew
 
   if (fileErrors.length > 0) {
     const errorMessage = `File has errors after edit:\n${fileErrors.map(LSP.Diagnostic.pretty).join("\n")}`
-    throw new Error(errorMessage)
+    // Throw a specific error type so callers can detect syntax-check failures separately
+    throw new SyntaxErrorAfterEdit(errorMessage, fileErrors)
   }
 
   // Write the modified content

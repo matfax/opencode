@@ -21,7 +21,8 @@ import { Provider } from "../provider/provider"
 import { Template } from "../util/template"
 import { generateText } from "ai"
 // Shared apply & utility functions
-import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite, trimDiff } from "../util/apply"
+import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite, trimDiff, SyntaxErrorAfterEdit } from "../util/apply"
+import { LSP } from "../lsp"
 import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../util/markdown"
 import { Permission } from "../permission"
 import { createTwoFilesPatch } from "diff"
@@ -110,12 +111,11 @@ export const EditTool = Tool.define("edit", {
     }
     const finalUser = { role: "user" as const, content: `## Instructions\n${params.instructions}` }
 
-    // Retry loop for edit-generation
-    let lastError = ""
+    // Retry loop that covers generation, application, and diagnostics write.
+  let lastError = ""
+  let capturedSyntaxDiagnostics: any | undefined = undefined
     let summary = ""
     let code = ""
-    let editOutput = ""
-    let isReject = true
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       // Build system messages for this format
@@ -134,20 +134,26 @@ export const EditTool = Tool.define("edit", {
       }
       messages.push(finalUser)
 
-      // Call LLM once per attempt
-      const editGen = await generateText({
-        model: useModel.language,
-        temperature: 0,
-        maxRetries: 0,
-        messages,
-      })
+      // Call LLM once per attempt. Fail fast if the model call itself fails.
+      let editGen
+      try {
+        editGen = await generateText({
+          model: useModel.language,
+          temperature: 0,
+          maxRetries: 0,
+          messages,
+        })
+      } catch (err: any) {
+        // Fail fast on model errors (do not retry)
+        throw new Error(`Edit model call failed: ${err?.message || String(err)}`)
+      }
 
-      editOutput = editGen.text
+      const editOutput = editGen.text
       const parsed = parseEditOutput(editOutput)
       summary = parsed.summary
       code = parsed.code
 
-      // Detect diff vs snippet for next iteration or final
+      // Detect diff vs snippet for next iteration
       const looksLikeDiff = /^\s*(diff\s|@@)/m.test(code)
       if (attempt < MAX_RETRIES) {
         currentFormat = looksLikeDiff ? Template.Format.Diff : Template.Format.Snippet
@@ -155,56 +161,70 @@ export const EditTool = Tool.define("edit", {
         currentFormat = Template.Format.Diff
       }
 
-      // Check rejection criteria
-      isReject =
-        !code || code.trim() === "" || /^\s*(?:\[?no\s*changes?]?|n\/a|null|undefined|#|\/\/|<!--)/i.test(code.trim())
-      if (!isReject) break
+      // Check rejection criteria (model returned no useful edit)
+      const isReject = !code || code.trim() === "" || /^\s*(?:\[?no\s*changes?]?|n\/a|null|undefined|#|\/\/|<!--)/i.test(code.trim())
+      if (isReject) {
+        lastError = summary || "Empty or invalid response"
+        continue
+      }
 
-      lastError = summary || "Empty or invalid response"
-    }
+      // Try to apply the edit and run diagnostics/write. If diagnostics indicate syntax errors,
+      // allow another retry. Fail fast for other errors (including model failures inside apply).
+      try {
+        const applyAgent = await Agent.get("apply")
+        const hasApplyModel = applyAgent?.model !== undefined
 
-    if (isReject) {
-      return {
-        metadata: { diagnostics: {}, diff: "" },
-        title: `${path.relative(Instance.worktree, filePath)}`,
-        output: summary || "Edit rejected by model",
+        const result = hasApplyModel
+          ? await applyEditOutput(code, summary, ctx, filePath, contentOld)
+          : await diffEditOutput(code, ctx, filePath, contentOld)
+
+        const contentNew = result.contentNew ?? contentOld
+        const diff = trimDiff(result.diff || createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
+
+        const agent = await Agent.get(ctx.agent)
+        if (agent?.permission.edit === "ask") {
+          await Permission.ask({
+            type: "edit",
+            sessionID: ctx.sessionID,
+            messageID: ctx.messageID,
+            callID: ctx.callID,
+            title: "Edit this file: " + filePath,
+            metadata: { filePath, diff },
+          })
+        }
+
+        // This may throw a syntax-related exception; if so, retry.
+        const { diagnostics } = await handleDiagnosticsAndFileWrite(filePath, contentNew, ctx)
+
+        return {
+          metadata: {
+            diagnostics,
+            diff: diff,
+          },
+          title: `${path.relative(Instance.worktree, filePath)}`,
+          output: summary || "Edit applied successfully",
+        }
+      } catch (err: any) {
+        // Retry only for the SyntaxErrorAfterEdit thrown by handleDiagnosticsAndFileWrite
+        if (err instanceof SyntaxErrorAfterEdit) {
+          lastError = err.message
+          capturedSyntaxDiagnostics = err.fileErrors
+          // on last attempt we'll return the diagnostics captured from the exception
+          continue
+        }
+        // For any other error (including model/apply failures), fail fast
+        throw err
       }
     }
 
-    // Apply the successful edit once
-    const applyAgent = await Agent.get("apply")
-    const hasApplyModel = applyAgent?.model !== undefined
-
-    // Apply the edit using the appropriate method
-    const result = hasApplyModel
-      ? await applyEditOutput(code, summary, ctx, filePath, contentOld)
-      : await diffEditOutput(code, ctx, filePath, contentOld)
-
-    const contentNew = result.contentNew ?? contentOld
-
-    // Build diff (applyEditOutput/diffEditOutput already returns diff, but ensure trimmed) and ask permission if required
-    const diff = trimDiff(result.diff || createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
-    const agent = await Agent.get(ctx.agent)
-    if (agent?.permission.edit === "ask") {
-      await Permission.ask({
-        type: "edit",
-        sessionID: ctx.sessionID,
-        messageID: ctx.messageID,
-        callID: ctx.callID,
-        title: "Edit this file: " + filePath,
-        metadata: { filePath, diff },
-      })
-    }
-
-    const { diagnostics } = await handleDiagnosticsAndFileWrite(filePath, contentNew, ctx)
+    // Exhausted retries: include LSP diagnostics in the response so caller sees the error details
+    // If we captured syntax errors from the last SyntaxErrorAfterEdit, prefer those diagnostics
+    const diagnostics = capturedSyntaxDiagnostics ? { [filePath]: capturedSyntaxDiagnostics } : await LSP.diagnostics()
 
     return {
-      metadata: {
-        diagnostics,
-        diff: diff,
-      },
+      metadata: { diagnostics, diff: "" },
       title: `${path.relative(Instance.worktree, filePath)}`,
-      output: summary || "Edit applied successfully",
+      output: lastError || "Edit rejected by model",
     }
   },
 })
