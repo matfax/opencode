@@ -14,7 +14,7 @@ import { BashPermissions } from "../util/bash-permissions"
 const DEFAULT_LIMIT = 1_000
 const DEFAULT_TIMEOUT = 1 * 60 * 1000
 const MAX_TIMEOUT = 10 * 60 * 1000
-const EXPIRE_AFTER = 5
+const DEFAULT_EXPIRATION = 5
 const DEFAULT_MAX_ITERATIONS = 10
 const DEFAULT_CONSECUTIVE_FAILURES = 2
 
@@ -194,7 +194,7 @@ export const BashTool = Tool.define("bash", {
       ),
   }),
   key: (p) => ["bash", !p.command ? "agentic" : "direct", p.command ? p.command : p.description].join("|"),
-  expireAfter: (p) => (!!p.command && p.autosummarize) ? undefined : EXPIRE_AFTER,
+  expireAfter: (p) => (!!p.command && p.autosummarize) ? undefined : DEFAULT_EXPIRATION,
   async execute(params, ctx) {
     const timeout = Math.min(params.timeout ?? DEFAULT_TIMEOUT, MAX_TIMEOUT)
     if (!params.command) return handleAgenticMode(params, ctx)

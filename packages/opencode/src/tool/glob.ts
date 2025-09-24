@@ -5,7 +5,7 @@ import DESCRIPTION from "./glob.txt"
 import { Ripgrep } from "../file/ripgrep"
 import { Instance } from "../project/instance"
 
-const EXPIRE_AFTER = 5 // expire after 5 messages
+const DEFAULT_EXPIRATION = 5 // expire after 5 messages
 
 export const GlobTool = Tool.define("glob", {
   description: DESCRIPTION,
@@ -19,7 +19,7 @@ export const GlobTool = Tool.define("glob", {
       ),
   }),
   key: (p) => ["glob", p.path || ".", p.pattern].join("|"),
-  expireAfter: (_p) => EXPIRE_AFTER,
+  expireAfter: (_p) => DEFAULT_EXPIRATION,
   async execute(params) {
     let search = params.path ?? Instance.directory
     search = path.isAbsolute(search) ? search : path.resolve(Instance.directory, search)

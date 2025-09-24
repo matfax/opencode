@@ -33,7 +33,7 @@ export const IGNORE_PATTERNS = [
 ]
 
 const LIMIT = 100
-const EXPIRE_AFTER = 5 // expire after 5 messages
+const DEFAULT_EXPIRATION = 5 // expire after 5 messages
 
 export const ListTool = Tool.define("list", {
   description: DESCRIPTION,
@@ -42,7 +42,7 @@ export const ListTool = Tool.define("list", {
     ignore: z.array(z.string()).describe("List of glob patterns to ignore").optional(),
   }),
   key: (p) => ["list", p.path || "."].join("|"),
-  expireAfter: (_p) => EXPIRE_AFTER,
+  expireAfter: (_p) => DEFAULT_EXPIRATION,
   async execute(params) {
     const searchPath = path.resolve(Instance.directory, params.path || ".")
 

@@ -5,7 +5,7 @@ import { Ripgrep } from "../file/ripgrep"
 import DESCRIPTION from "./grep.txt"
 import { Instance } from "../project/instance"
 
-const EXPIRE_AFTER = 5 // expire after 5 messages
+const DEFAULT_EXPIRATION = 5 // expire after 5 messages
 
 export const GrepTool = Tool.define("grep", {
   description: DESCRIPTION,
@@ -15,7 +15,7 @@ export const GrepTool = Tool.define("grep", {
     include: z.string().optional().describe('File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")'),
   }),
   key: (p) => ["grep", p.path || ".", p.pattern].join("|"),
-  expireAfter: (_p) => EXPIRE_AFTER,
+  expireAfter: (_p) => DEFAULT_EXPIRATION,
   async execute(params) {
     if (!params.pattern) {
       throw new Error("pattern is required")
