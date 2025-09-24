@@ -101,7 +101,7 @@ describe("Plugin tool.register hook", () => {
       await Plugin.init()
 
       // Confirm the tool is registered
-      const allIDs = ToolRegistry.ids()
+      const allIDs = ToolRegistry.ids() // Test uses standard tools
       expect(allIDs).toContain("from-plugin")
 
       // Also verify via the HTTP surface
@@ -164,7 +164,7 @@ test("Multiple plugins can each register tools", async () => {
 
     await Plugin.init()
 
-    const ids = ToolRegistry.ids()
+    const ids = ToolRegistry.ids() // Test uses standard tools
     expect(ids).toContain("alpha-tool")
     expect(ids).toContain("beta-tool")
 

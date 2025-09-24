@@ -436,7 +436,7 @@ export namespace SessionPrompt {
       mergeDeep(await ToolRegistry.enabled(input.providerID, input.modelID, input.agent)),
       mergeDeep(input.tools ?? {}),
     )
-    for (const item of await ToolRegistry.tools(input.providerID, input.modelID)) {
+    for (const item of await ToolRegistry.tools(input.providerID, input.modelID, input.agent)) {
       if (Wildcard.all(item.id, enabledTools) === false) continue
       const schema = ProviderTransform.schema(input.providerID, input.modelID, z.toJSONSchema(item.parameters))
       // store key & enableRefresh & expireAfter for later event handling (tool-result)
@@ -613,7 +613,7 @@ export namespace SessionPrompt {
       if (!shouldRefresh) continue
 
       try {
-        const toolList = await ToolRegistry.tools("", "") // provider/model not needed for re-run context
+        const toolList = await ToolRegistry.tools("", "") // provider/model not needed for re-run context, use standard tools
         const toolInfo = toolList.find((t) => t.id === p.tool)
         if (!toolInfo) throw new Error("tool missing")
 

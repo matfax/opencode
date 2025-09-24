@@ -1,5 +1,6 @@
 import z from "zod/v4"
 import { BashTool } from "./bash"
+import { checkCommandAvailability, executeHelp, BashAgentTools } from "./bash-agent-tools"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
@@ -19,8 +20,8 @@ import { RemoveTool } from "./remove"
 import { DiffTool } from "./diff"
 
 export namespace ToolRegistry {
-  // Built-in tools that ship with opencode
-  const BUILTIN = [
+  // Tools for primary, subagent, and general mode agents
+  const STANDARD_TOOLS = [
     InvalidTool,
     BashTool,
     EditTool,
@@ -38,6 +39,18 @@ export namespace ToolRegistry {
     TaskTool,
     SymbolTool,
     DiffTool,
+  ]
+
+  // Tools specifically for support mode agents (like bash agent)
+  const SUPPORT_AGENT_TOOLS = [
+    InvalidTool, // Common tools available to all agents
+    checkCommandAvailability,
+    executeHelp,
+    BashAgentTools.ls,
+    BashAgentTools.read,
+    BashAgentTools.grep,
+    BashAgentTools.glob,
+    BashAgentTools.execute,
   ]
 
   // Extra tools registered at runtime (via plugins)
@@ -124,17 +137,18 @@ export namespace ToolRegistry {
     else HTTP.push(info)
   }
 
-  function allTools(): Tool.Info[] {
-    return [...BUILTIN, ...EXTRA, ...HTTP]
+  function allTools(agent?: Agent.Info): Tool.Info[] {
+    const baseTools = agent?.mode === "support" ? SUPPORT_AGENT_TOOLS : STANDARD_TOOLS
+    return [...baseTools, ...EXTRA, ...HTTP]
   }
 
-  export function ids() {
-    return allTools().map((t) => t.id)
+  export function ids(agent?: Agent.Info) {
+    return allTools(agent).map((t) => t.id)
   }
 
-  export async function tools(_providerID: string, _modelID: string) {
+  export async function tools(_providerID: string, _modelID: string, agent?: Agent.Info) {
     const result = await Promise.all(
-      allTools().map(async (t) => ({
+      allTools(agent).map(async (t) => ({
         id: t.id,
         ...(await t.init()),
       })),

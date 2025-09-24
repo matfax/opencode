@@ -3,212 +3,281 @@ import { exec } from "child_process"
 
 import { Tool } from "./tool"
 import DESCRIPTION from "./bash.txt"
-import { Permission } from "../permission"
-import { Filesystem } from "../util/filesystem"
-import { lazy } from "../util/lazy"
-import { Log } from "../util/log"
-import { Wildcard } from "../util/wildcard"
-import { $ } from "bun"
+// @ts-ignore
+import BASH_OUTPUT_SUMMARY_TEMPLATE from "./support/bash-output-summary.txt"
 import { Instance } from "../project/instance"
 import { Agent } from "../agent/agent"
+import { Provider } from "../provider/provider"
+import { generateText } from "ai"
+import { BashPermissions } from "../util/bash-permissions"
 
-const MAX_OUTPUT_LENGTH = 30_000
+const DEFAULT_LIMIT = 1_000
 const DEFAULT_TIMEOUT = 1 * 60 * 1000
 const MAX_TIMEOUT = 10 * 60 * 1000
+const EXPIRE_AFTER = 5
+const DEFAULT_MAX_ITERATIONS = 10
+const DEFAULT_CONSECUTIVE_FAILURES = 2
 
-const log = Log.create({ service: "bash-tool" })
+async function executeCommand(command: string, timeout: number, ctx: any, directory?: string) {
+  const dir = directory ? directory : Instance.directory
+  const proc = exec(command, { cwd: dir, signal: ctx.abort, timeout })
+  let out = ""
+  proc.stdout?.on("data", (c) => {
+    out += c.toString()
+  })
+  proc.stderr?.on("data", (c) => {
+    out += c.toString()
+  })
+  await new Promise<void>((resolve) => {
+    proc.on("close", () => resolve())
+  })
+  return { output: out, exitCode: proc.exitCode || 0 }
+}
 
-const parser = lazy(async () => {
-  try {
-    const { default: Parser } = await import("tree-sitter")
-    const Bash = await import("tree-sitter-bash")
-    const p = new Parser()
-    p.setLanguage(Bash.language as any)
-    return p
-  } catch (e) {
-    const { default: Parser } = await import("web-tree-sitter")
-    const { default: treeWasm } = await import("web-tree-sitter/tree-sitter.wasm" as string, { with: { type: "wasm" } })
-    await Parser.init({
-      locateFile() {
-        return treeWasm
+async function handleAgenticMode(params: any, ctx: any) {
+  const maxIter = params.maxIterations || DEFAULT_MAX_ITERATIONS
+  const maxFail = params.maxConsecutiveFailures || DEFAULT_CONSECUTIVE_FAILURES
+  let i = 0
+  let fails = 0
+  const convo: Array<{ role: "user" | "assistant"; content: string }> = []
+
+  const bashAgent = await Agent.get("bash")
+  const model = bashAgent?.model
+    ? await Provider.getModel(bashAgent.model.providerID, bashAgent.model.modelID)
+    : await (async () => {
+        const def = await Provider.defaultModel()
+        return Provider.getModel(def.providerID, def.modelID)
+      })()
+
+  convo.push({ role: "user", content: params.description })
+
+  type Step = { index: number; assistant: string; command: string; exitCode: number; output: string }
+  const steps: Step[] = []
+
+  while (i < maxIter) {
+    const gen = await generateText({ model: model.language, temperature: 0.3, maxRetries: 3, messages: convo })
+    const assistant = gen.text.trim()
+    const done = assistant.toLowerCase().includes("done") || assistant.toLowerCase().includes("complete")
+    if (done) break
+
+    const cmd = assistant
+    await BashPermissions.checkCommand(cmd, ctx, { description: `Agentic iteration ${i + 1}` })
+    const res = await executeCommand(cmd, params.timeout || DEFAULT_TIMEOUT, ctx)
+
+    steps.push({ index: i + 1, assistant, command: cmd, exitCode: res.exitCode, output: res.output })
+
+    convo.push({ role: "assistant", content: cmd })
+    convo.push({ role: "user", content: `Exit code: ${res.exitCode}\nOutput: ${res.output}` })
+
+    if (res.exitCode !== 0) {
+      fails += 1
+      if (fails >= maxFail) break
+    } else {
+      fails = 0
+    }
+
+    i += 1
+    ctx.metadata({
+      metadata: {
+        currentIteration: i,
+        totalIterations: maxIter,
+        lastCommand: cmd,
+        lastOutput: res.output,
+        lastExitCode: res.exitCode,
       },
     })
-    const { default: bashWasm } = await import("tree-sitter-bash/tree-sitter-bash.wasm" as string, {
-      with: { type: "wasm" },
-    })
-    const bashLanguage = await Parser.Language.load(bashWasm)
-    const p = new Parser()
-    p.setLanguage(bashLanguage)
-    return p
   }
-})
+
+  const extended = steps
+    .map(
+      (s) =>
+        `## Step ${s.index}\nAssistant:\n${s.assistant}\n\nExecute:\n${s.command}\n\nExit code: ${s.exitCode}\nOutput:\n${s.output}\n`,
+    )
+    .join("\n---\n\n")
+
+  const limit = params.limit ?? DEFAULT_LIMIT
+  let out = extended
+  let summarized = false
+
+  if (extended.length > limit) {
+    if (params.autosummarize) {
+      let sumAgent = await Agent.get("bash-summary")
+      if (!sumAgent) sumAgent = await Agent.get("bash")
+      const sumModel = sumAgent?.model
+        ? await Provider.getModel(sumAgent.model.providerID, sumAgent.model.modelID)
+        : await (async () => {
+            const def = await Provider.defaultModel()
+            return Provider.getModel(def.providerID, def.modelID)
+          })()
+
+      const instr = params.description
+        ? `Summarize the following multi-step agentic bash session. Include the intent, key commands, notable outputs, and overall status.\n\nIntent: ${params.description}\n\nTranscript:\n'''${extended}'''`
+        : `Summarize the following multi-step agentic bash session. Include key commands, notable outputs, and overall status.\n\nTranscript:\n'''${extended}'''`
+
+      const sum = await generateText({
+        model: sumModel.language,
+        temperature: 0.3,
+        maxRetries: 3,
+        messages: [
+          { role: "system", content: BASH_OUTPUT_SUMMARY_TEMPLATE },
+          { role: "user", content: instr },
+        ],
+      })
+      out = sum.text
+      summarized = true
+    } else {
+      out = extended.slice(0, limit) + "\n\n(Output was truncated due to length limit)"
+    }
+  }
+
+  return {
+    title: `Agentic execution (${steps.length} commands)`,
+    metadata: {
+      agenticMode: true,
+      totalCommands: steps.length,
+      summarized,
+      originalLength: extended.length,
+      results: steps.map((s) => ({
+        command: s.command,
+        output: s.output,
+        exitCode: s.exitCode,
+        description: `Step ${s.index}`,
+        assistant: s.assistant,
+        toolCall: { name: "execute", directory: Instance.directory },
+      })),
+    },
+    output: out,
+  }
+}
 
 export const BashTool = Tool.define("bash", {
   description: DESCRIPTION,
   parameters: z.object({
-    command: z.string().describe("The command to execute"),
-    timeout: z.number().describe("Optional timeout in milliseconds").optional(),
+    command: z
+      .string()
+      .optional()
+      .describe(
+        "The direct command to execute. If provided, description is used as context/explanation only.",
+      ),
     description: z
       .string()
       .describe(
-        "Clear, concise description of what this command does in 5-10 words. Examples:\nInput: ls\nOutput: Lists files in current directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies\n\nInput: mkdir foo\nOutput: Creates directory 'foo'",
+        "Description of what you want to accomplish. Used as natural language instructions when no command is provided, or as context when command is provided.",
+      ),
+    timeout: z.number().optional().describe("Optional timeout in milliseconds"),
+    limit: z
+      .number()
+      .optional()
+      .default(DEFAULT_LIMIT)
+      .describe(
+        "If > 0, the output of the invoked command will either be truncated or summarized to fit within this character limit (default `" +
+          DEFAULT_LIMIT +
+          "` characters)",
+      ),
+    autosummarize: z
+      .boolean()
+      .optional()
+      .describe(
+        "Attempt to summarize the output to fit within the limit instead of truncating it, if limit is exceeded",
+      ),
+    maxIterations: z
+      .number()
+      .optional()
+      .default(DEFAULT_MAX_ITERATIONS)
+      .describe("Maximum number of command iterations in agentic mode"),
+    maxConsecutiveFailures: z
+      .number()
+      .optional()
+      .default(DEFAULT_CONSECUTIVE_FAILURES)
+      .describe(
+        "In agentic mode, maximum number of consecutive command failures before stopping execution",
       ),
   }),
+  key: (p) => ["bash", !p.command ? "agentic" : "direct", p.command ? p.command : p.description].join("|"),
+  expireAfter: (p) => (!!p.command && p.autosummarize) ? undefined : EXPIRE_AFTER,
   async execute(params, ctx) {
     const timeout = Math.min(params.timeout ?? DEFAULT_TIMEOUT, MAX_TIMEOUT)
-    const tree = await parser().then((p) => p.parse(params.command))
-    const permissions = await Agent.get(ctx.agent).then((x) => x.permission.bash)
+    if (!params.command) return handleAgenticMode(params, ctx)
 
-    const askPatterns = new Set<string>()
-    for (const node of tree.rootNode.descendantsOfType("command")) {
-      const command = []
-      for (let i = 0; i < node.childCount; i++) {
-        const child = node.child(i)
-        if (!child) continue
-        if (
-          child.type !== "command_name" &&
-          child.type !== "word" &&
-          child.type !== "string" &&
-          child.type !== "raw_string" &&
-          child.type !== "concatenation"
-        ) {
-          continue
-        }
-        command.push(child.text)
-      }
+    const cmd = params.command
+    const desc = params.description
 
-      // not an exhaustive list, but covers most common cases
-      if (["cd", "rm", "cp", "mv", "mkdir", "touch", "chmod", "chown"].includes(command[0])) {
-        for (const arg of command.slice(1)) {
-          if (arg.startsWith("-") || (command[0] === "chmod" && arg.startsWith("+"))) continue
-          const resolved = await $`realpath ${arg}`
-            .quiet()
-            .nothrow()
-            .text()
-            .then((x) => x.trim())
-          log.info("resolved path", { arg, resolved })
-          if (resolved && !Filesystem.contains(Instance.directory, resolved)) {
-            throw new Error(
-              `This command references paths outside of ${Instance.directory} so it is not allowed to be executed.`,
-            )
-          }
-        }
-      }
+    await BashPermissions.checkCommand(cmd, ctx, { description: desc })
 
-      // always allow cd if it passes above check
-      if (command[0] !== "cd") {
-        const action = Wildcard.all(node.text, permissions)
-        if (action === "deny") {
-          throw new Error(
-            `The user has specifically restricted access to this command, you are not allowed to execute it. Here is the configuration: ${JSON.stringify(permissions)}`,
-          )
-        }
-        if (action === "ask") {
-          const pattern = (() => {
-            let head = ""
-            let sub: string | undefined
-            for (let i = 0; i < node.childCount; i++) {
-              const child = node.child(i)
-              if (!child) continue
-              if (child.type === "command_name") {
-                if (!head) {
-                  head = child.text
-                }
-                continue
-              }
-              if (!sub && child.type === "word") {
-                if (!child.text.startsWith("-")) sub = child.text
-              }
-            }
-            if (!head) return
-            return sub ? `${head} ${sub} *` : `${head} *`
-          })()
-          if (pattern) {
-            askPatterns.add(pattern)
-          }
-        }
-      }
-    }
+    const proc = exec(cmd, { cwd: Instance.directory, signal: ctx.abort, timeout })
+    let out = ""
 
-    if (askPatterns.size > 0) {
-      const patterns = Array.from(askPatterns)
-      await Permission.ask({
-        type: "bash",
-        pattern: patterns,
-        sessionID: ctx.sessionID,
-        messageID: ctx.messageID,
-        callID: ctx.callID,
-        title: params.command,
-        metadata: {
-          command: params.command,
-          patterns,
-        },
-      })
-    }
+    ctx.metadata({ metadata: { output: "", description: desc } })
 
-    const process = exec(params.command, {
-      cwd: Instance.directory,
-      signal: ctx.abort,
-      timeout,
+    proc.stdout?.on("data", (chunk) => {
+      out += chunk.toString()
+      ctx.metadata({ metadata: { output: out, description: desc } })
     })
-
-    let output = ""
-
-    // Initialize metadata with empty output
-    ctx.metadata({
-      metadata: {
-        output: "",
-        description: params.description,
-      },
-    })
-
-    process.stdout?.on("data", (chunk) => {
-      output += chunk.toString()
-      ctx.metadata({
-        metadata: {
-          output: output,
-          description: params.description,
-        },
-      })
-    })
-
-    process.stderr?.on("data", (chunk) => {
-      output += chunk.toString()
-      ctx.metadata({
-        metadata: {
-          output: output,
-          description: params.description,
-        },
-      })
+    proc.stderr?.on("data", (chunk) => {
+      out += chunk.toString()
+      ctx.metadata({ metadata: { output: out, description: desc } })
     })
 
     await new Promise<void>((resolve) => {
-      process.on("close", () => {
-        resolve()
-      })
+      proc.on("close", () => resolve())
     })
 
-    ctx.metadata({
-      metadata: {
-        output: output,
-        exit: process.exitCode,
-        description: params.description,
-      },
-    })
+    ctx.metadata({ metadata: { output: out, exit: proc.exitCode, description: desc } })
 
-    if (output.length > MAX_OUTPUT_LENGTH) {
-      output = output.slice(0, MAX_OUTPUT_LENGTH)
-      output += "\n\n(Output was truncated due to length limit)"
+    let finalOut = out
+    let summarized = false
+    const limit = params.limit ?? DEFAULT_LIMIT
+    if (out.length > limit) {
+      if (params.autosummarize) {
+        let sumAgent = await Agent.get("bash-summary")
+        if (!sumAgent) sumAgent = await Agent.get("bash")
+        const useModel = sumAgent?.model
+          ? await Provider.getModel(sumAgent.model.providerID, sumAgent.model.modelID)
+          : await (async () => {
+              const def = await Provider.defaultModel()
+              return Provider.getModel(def.providerID, def.modelID)
+            })()
+
+        const instr = params.description
+          ? `Please summarize the following command output that had the original intent: ${params.description}\n\nCommand: ${cmd}\nOutput:\n'''${out}'''`
+          : `Please summarize the following command output:\n\nCommand: ${cmd}\nOutput:\n'''${out}'''`
+
+        const sum = await generateText({
+          model: useModel.language,
+          temperature: 0.3,
+          maxRetries: 3,
+          messages: [
+            { role: "system", content: BASH_OUTPUT_SUMMARY_TEMPLATE },
+            { role: "user", content: instr },
+          ],
+        })
+        finalOut = sum.text
+        summarized = true
+      } else {
+        finalOut = out.slice(0, limit) + "\n\n(Output was truncated due to length limit)"
+      }
     }
 
     return {
-      title: params.command,
+      title: cmd,
       metadata: {
-        output,
-        exit: process.exitCode,
-        description: params.description,
+        output: finalOut,
+        exit: proc.exitCode,
+        description: desc,
+        summarized,
+        originalLength: out.length,
+        agenticMode: false,
+        totalCommands: 1,
+        results: [{
+          command: cmd,
+          output: finalOut,
+          exitCode: proc.exitCode || 0,
+          description: desc,
+          assistant: "",
+          toolCall: { name: "execute", directory: Instance.directory },
+        }],
       },
-      output,
+      output: finalOut,
     }
   },
 })

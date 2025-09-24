@@ -137,6 +137,34 @@ export namespace Agent {
         mode: "support",
         builtIn: true,
       },
+      bash: {
+        name: "bash",
+        description: "Specialized agent for generating bash/CLI commands from natural language",
+        prompt: "",
+        tools: {
+          "command-availability": true,
+          "help": true,
+          "list": true,
+          "read": true,
+          "grep": true,
+          "glob": true,
+          "execute": true,
+        },
+        options: {},
+        permission: agentPermission,
+        mode: "support",
+        builtIn: true,
+      },
+      "bash-summary": {
+        name: "bash-summary",
+        description: "Specialized agent for summarizing bash command output",
+        prompt: "",
+        tools: {},
+        options: {},
+        permission: agentPermission,
+        mode: "support",
+        builtIn: true,
+      },
     }
     for (const [key, value] of Object.entries(cfg.agent ?? {})) {
       if (value.disable) {
