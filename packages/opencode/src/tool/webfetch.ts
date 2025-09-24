@@ -13,7 +13,7 @@ import { generateText } from "ai"
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
 const DEFAULT_TIMEOUT = 30
 const MAX_TIMEOUT = 120
-const DEFAULT_EXPIRATION = 5 // messages
+const DEFAULT_EXPIRATION = 10 // messages
 
 export const WebFetchTool = Tool.define("webfetch", {
   description: DESCRIPTION,
