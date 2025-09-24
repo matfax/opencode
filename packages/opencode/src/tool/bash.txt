@@ -1,15 +1,13 @@
-Run bash commands in a persistent shell with optional timeout. Supports direct command execution or natural language to command generation. Handles quoting, output capture, and cross-platform compatibility (Linux, macOS, Windows/PowerShell).
+Run bash commands in a persistent shell with optional timeout. Supports direct command execution or natural language to command generation.
 
-## Usage
+Usage:
+- Provide either `command` with a `description` (direct execution) or `description` only (in natural language, as sub-agentic instructions)
+- For commands creating directories, use the List tool to verify parent directories first
+- Always quote file paths with spaces (e.g., cd "path with spaces/file.txt")
+- Output is truncated when the character count exceeds the `limit` parameter (default 1,000 characters)
+- Separate multiple commands with `;` or `&&` (not newlines)
+- Avoid `cd` unless explicitly requested
 
-- Provide either `command` (direct execution) or `instructions` (natural language, AI generates command). Not both.
-- For commands creating files/directories, use the List tool to verify parent directories first.
-- Always quote file paths with spaces (e.g., cd "path with spaces/file.txt").
-- Output is truncated when the character count exceeds the `limit` parameter (default 1,000 characters).
-- Timeout: default 120,000ms (2 min), max 600,000ms (10 min).
-- Avoid using `find`, `grep`, `cat`, `head`, `tail`, `ls`. Use Grep, Glob, Task, Read, or List tools instead.
-- If you must search, use `rg` (ripgrep) instead of `grep`.
-- Separate multiple commands with `;` or `&&` (not newlines).
-- Prefer absolute paths; avoid `cd` unless explicitly requested.
-
-Commands are tailored for your OS and shell, following security best practices. Harmful commands are refused.
+Antipatterns to avoid:
+- NEVER use this tool for reading or writing files. Use Read or Write tools instead
+- NEVER use this tool for searching files. Use List, Glob, or Grep tools instead
