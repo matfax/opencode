@@ -10,3 +10,4 @@ If both `commit` and `combined` supplied, combined of working tree still display
 
 Use this tool if the user references recent changes or a bug you've made.
 It should serve to give you an overview of the current combined changes that you have made so far, and possibly the user as well.
+Prefer this tool over using `git diff` or `git show` to understand recent changes.
