@@ -22,12 +22,7 @@ export const WebFetchTool = Tool.define("webfetch", {
     format: z
       .enum(["text", "markdown", "html", "summary"])
       .describe("The format to return the content in (text, markdown, html, or summary)"),
-    timeout: z
-      .number()
-      .describe("Optional timeout in seconds")
-      .optional()
-      .default(DEFAULT_TIMEOUT)
-      .transform((n) => Math.min(n, MAX_TIMEOUT)),
+    timeout: z.number().describe("Optional timeout in seconds").optional().default(DEFAULT_TIMEOUT),
     autorefresh: z.boolean().optional().describe("Automatically refresh the fetched website on subsequent prompts"),
     prompt: z
       .string()
@@ -58,7 +53,8 @@ export const WebFetchTool = Tool.define("webfetch", {
         },
       })
 
-    const timeout = params.timeout * 1000
+    const timeoutSeconds = Math.min(params.timeout, MAX_TIMEOUT)
+    const timeout = timeoutSeconds * 1000
 
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), timeout)
