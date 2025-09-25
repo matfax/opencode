@@ -1,18 +1,18 @@
 import z from "zod/v4"
-import { Tool } from "./tool"
-import { gatherToolAvailability } from "../util/tool-availability"
+import { Tool } from "../tool/tool"
+import { gatherToolAvailability } from "./tool-availability"
 import { exec } from "child_process"
 import { Instance } from "../project/instance"
-import { Filesystem } from "../util/filesystem"
+import { Filesystem } from "./filesystem"
 
 // Import existing tools
-import { ListTool } from "./ls"
-import { ReadTool } from "./read"
-import { GrepTool } from "./grep" 
-import { GlobTool } from "./glob"
+import { ListTool } from "../tool/ls"
+import { ReadTool } from "../tool/read"
+import { GrepTool } from "../tool/grep" 
+import { GlobTool } from "../tool/glob"
 
 // Import unified permission system
-import { BashPermissions } from "../util/bash-permissions"
+import { BashPermissions } from "./bash-permissions"
 
 // Tool availability checker for bash-summary agent
 export const checkCommandAvailability = Tool.define("command-availability", {

@@ -1,6 +1,6 @@
 import z from "zod/v4"
 import { BashTool } from "./bash"
-import { checkCommandAvailability, executeHelp, BashAgentTools } from "./bash-agent-tools"
+import { checkCommandAvailability, executeHelp, BashAgentTools } from "../util/bash-agent-tools"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
