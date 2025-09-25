@@ -30,6 +30,15 @@ Help Commands To Consider:
 - man <command> (Linux/macOS)
 <command> may be a specific parameter-free command, e.g. `git pull`.
 
+Examples:
+```bash
+# Background processes
+node server.js &
+
+# Interactive commands - avoid or use -y flags
+npm init -y  # not npm init
+```
+
 Guidelines:
 - Generate commands appropriate for the detected operating system and shell
 - For Windows: Use PowerShell syntax when appropriate, CMD when specified
