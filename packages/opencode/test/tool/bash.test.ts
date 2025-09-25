@@ -24,11 +24,15 @@ describe("tool.bash", () => {
         {
           command: "echo 'test'",
           description: "Echo test message",
+          limit: 1000,
+          maxIterations: 1,
+          maxConsecutiveFailures: 1,
         },
         ctx,
       )
-      expect(result.metadata.exit).toBe(0)
-      expect(result.metadata.output).toContain("test")
+      const md: any = result.metadata
+      expect(md.exit).toBe(0)
+      expect(md.output).toContain("test")
     })
   })
 
@@ -39,6 +43,9 @@ describe("tool.bash", () => {
           {
             command: "cd ../",
             description: "Try to cd to parent directory",
+              limit: 1000,
+              maxIterations: 1,
+              maxConsecutiveFailures: 1,
           },
           ctx,
         ),
