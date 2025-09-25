@@ -156,9 +156,7 @@ export const BashTool = Tool.define("bash", {
     command: z
       .string()
       .optional()
-      .describe(
-        "The direct command to execute. If provided, description is used as context/explanation only.",
-      ),
+      .describe("The direct command to execute. If provided, description is used as context/explanation only."),
     description: z
       .string()
       .describe(
@@ -189,12 +187,10 @@ export const BashTool = Tool.define("bash", {
       .number()
       .optional()
       .default(DEFAULT_CONSECUTIVE_FAILURES)
-      .describe(
-        "In agentic mode, maximum number of consecutive command failures before stopping execution",
-      ),
+      .describe("In agentic mode, maximum number of consecutive command failures before stopping execution"),
   }),
   key: (p) => ["bash", !p.command ? "agentic" : "direct", p.command ? p.command : p.description].join("|"),
-  expireAfter: (p) => (!!p.command && p.autosummarize) ? undefined : DEFAULT_EXPIRATION,
+  expireAfter: (p) => (!!p.command && p.autosummarize ? undefined : DEFAULT_EXPIRATION),
   async execute(params, ctx) {
     const timeout = Math.min(params.timeout ?? DEFAULT_TIMEOUT, MAX_TIMEOUT)
     if (!params.command) return handleAgenticMode(params, ctx)
@@ -268,14 +264,16 @@ export const BashTool = Tool.define("bash", {
         originalLength: out.length,
         agenticMode: false,
         totalCommands: 1,
-        results: [{
-          command: cmd,
-          output: finalOut,
-          exitCode: proc.exitCode || 0,
-          description: desc,
-          assistant: "",
-          toolCall: { name: "execute", directory: Instance.directory },
-        }],
+        results: [
+          {
+            command: cmd,
+            output: finalOut,
+            exitCode: proc.exitCode || 0,
+            description: desc,
+            assistant: "",
+            toolCall: { name: "execute", directory: Instance.directory },
+          },
+        ],
       },
       output: finalOut,
     }

@@ -43,9 +43,9 @@ describe("tool.bash", () => {
           {
             command: "cd ../",
             description: "Try to cd to parent directory",
-              limit: 1000,
-              maxIterations: 1,
-              maxConsecutiveFailures: 1,
+            limit: 1000,
+            maxIterations: 1,
+            maxConsecutiveFailures: 1,
           },
           ctx,
         ),

@@ -40,21 +40,21 @@ export namespace BashPermissions {
    * Handles path validation, permission patterns, and user prompts
    */
   export async function checkCommand(
-    command: string, 
-    ctx: any, 
+    command: string,
+    ctx: any,
     options: {
       description?: string
       agentName?: string
       toolContext?: string
-    } = {}
+    } = {},
   ) {
     const { description, agentName = ctx.agent, toolContext } = options
-    
+
     const tree = await parser().then((p) => p.parse(command))
     const permissions = await Agent.get(agentName).then((x) => x.permission.bash)
-    
+
     const askPatterns = new Set<string>()
-    
+
     for (const node of tree.rootNode.descendantsOfType("command")) {
       const cmdParts = []
       for (let i = 0; i < node.childCount; i++) {
@@ -128,7 +128,7 @@ export namespace BashPermissions {
     if (askPatterns.size > 0) {
       const patterns = Array.from(askPatterns)
       const title = description ? `${command} - ${description}` : command
-      
+
       await Permission.ask({
         type: "bash",
         pattern: patterns,

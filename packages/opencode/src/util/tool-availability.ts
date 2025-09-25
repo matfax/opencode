@@ -14,22 +14,12 @@ export const COMMON_TOOLS = [
   "go",
   "rustc",
   "bun",
-  "make"
+  "make",
 ]
 
-export const LINUX_MAC_TOOLS = [
-  "curl",
-  "wget",
-  "brew",
-  "apt",
-  "yum",
-  "pacman"
-]
+export const LINUX_MAC_TOOLS = ["curl", "wget", "brew", "apt", "yum", "pacman"]
 
-export const WINDOWS_TOOLS = [
-  "winget",
-  "choco"
-]
+export const WINDOWS_TOOLS = ["winget", "choco"]
 
 export type ToolInfo = { available: boolean; version?: string; path?: string }
 

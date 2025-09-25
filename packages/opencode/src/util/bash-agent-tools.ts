@@ -8,7 +8,7 @@ import { Filesystem } from "./filesystem"
 // Import existing tools
 import { ListTool } from "../tool/ls"
 import { ReadTool } from "../tool/read"
-import { GrepTool } from "../tool/grep" 
+import { GrepTool } from "../tool/grep"
 import { GlobTool } from "../tool/glob"
 
 // Import unified permission system
@@ -18,11 +18,11 @@ import { BashPermissions } from "./bash-permissions"
 export const checkCommandAvailability = Tool.define("command-availability", {
   description: "Check availability of shell commands and tools",
   parameters: z.object({
-    tools: z.array(z.string()).describe("Array of command names or patterns to check availability for")
+    tools: z.array(z.string()).describe("Array of command names or patterns to check availability for"),
   }),
   async execute(params) {
     const toolData = await gatherToolAvailability(params.tools)
-    
+
     return {
       title: `Command availability check for ${params.tools.length} tools`,
       metadata: {
@@ -38,7 +38,7 @@ export const checkCommandAvailability = Tool.define("command-availability", {
 export const executeHelp = Tool.define("help", {
   description: "Execute help commands to get command documentation",
   parameters: z.object({
-    helpCommand: z.string().describe("The exact help command to execute")
+    helpCommand: z.string().describe("The exact help command to execute"),
   }),
   async execute(params, ctx) {
     const process = exec(params.helpCommand, {
@@ -93,7 +93,7 @@ export const BashAgentTools = {
   }),
 
   read: Tool.define("read", {
-    description: "Read file contents", 
+    description: "Read file contents",
     parameters: z.object({
       filePath: z.string().describe("Path to file to read"),
       offset: z.number().optional().describe("Line number to start from"),
@@ -104,7 +104,7 @@ export const BashAgentTools = {
       const readParams = {
         ...params,
         autoSummarize: false, // Disable auto-summarization
-        prompt: undefined,    // No summary prompts
+        prompt: undefined, // No summary prompts
       }
       const result = await ReadTool.init().then((tool: any) => tool.execute(readParams, ctx))
       return result
@@ -145,19 +145,19 @@ export const BashAgentTools = {
     }),
     async execute(params: any, ctx: any) {
       const workingDir = params.directory || Instance.directory
-      
+
       // Basic path validation
       if (params.directory && !Filesystem.contains(Instance.directory, params.directory)) {
         throw new Error(`Directory ${params.directory} is outside the project directory`)
       }
-      
+
       // **CRITICAL**: Apply full permission checks for bash agent execute tool
       await BashPermissions.checkCommand(params.command, ctx, {
         description: "Bash agent execute",
         agentName: "bash",
         toolContext: "bash-agent-execute",
       })
-      
+
       const process = exec(params.command, {
         cwd: workingDir,
         signal: ctx.abort,
@@ -204,8 +204,8 @@ export function createBashAgentContext(originalCtx: any, toolName: string): any 
         metadata: {
           ...input.metadata,
           bashAgentTool: toolName,
-        }
+        },
       })
-    }
+    },
   }
 }

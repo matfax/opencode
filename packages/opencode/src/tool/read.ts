@@ -23,7 +23,10 @@ export const ReadTool = Tool.define("read", {
     offset: z.coerce.number().describe("The line number to start reading from (0-based)").optional().default(0),
     limit: z.coerce.number().describe("The number of lines to read").optional().default(DEFAULT_READ_LIMIT),
     autoSummarize: z.boolean().optional().describe("Automatically summarize the file if it exceeds the line limit"),
-    prompt: z.string().optional().describe("Optional instruction for what to focus on in the summary (only used with auto-summarize)"),
+    prompt: z
+      .string()
+      .optional()
+      .describe("Optional instruction for what to focus on in the summary (only used with auto-summarize)"),
   }),
   key: (p) => {
     return ["read", "a" + (p.autoSummarize ? "1" : "0"), p.filePath].join("|")
@@ -67,16 +70,16 @@ export const ReadTool = Tool.define("read", {
     if (isImage) throw new Error(`This is an image file of type: ${isImage}\nUse a different tool to process images`)
     const isBinary = await isBinaryFile(filepath, file)
     if (isBinary) throw new Error(`Cannot read binary file: ${filepath}`)
-    
+
     const lines = await file.text().then((text) => text.split("\n"))
-    
+
     // Check if auto-summarize should trigger
     const shouldAutoSummarize = params.autoSummarize && !params.offset && lines.length > limit
-    
+
     if (shouldAutoSummarize) {
       // Get full file content for summarization
       const fullContent = lines.join("\n")
-      
+
       // Get summary agent configuration
       const summaryAgent = await Agent.get("summary")
       const useModel = summaryAgent?.model
@@ -115,7 +118,7 @@ export const ReadTool = Tool.define("read", {
         },
       }
     }
-    
+
     const raw = lines.slice(params.offset, params.offset + limit).map((line) => {
       return line.length > MAX_LINE_LENGTH ? line.substring(0, MAX_LINE_LENGTH) + "..." : line
     })

@@ -21,7 +21,13 @@ import { Provider } from "../provider/provider"
 import { Template } from "../util/template"
 import { generateText } from "ai"
 // Shared apply & utility functions
-import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite, trimDiff, SyntaxErrorAfterEdit } from "../util/apply"
+import {
+  applyEditOutput,
+  diffEditOutput,
+  handleDiagnosticsAndFileWrite,
+  trimDiff,
+  SyntaxErrorAfterEdit,
+} from "../util/apply"
 import { LSP } from "../lsp"
 import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../util/markdown"
 import { Permission } from "../permission"
@@ -112,8 +118,8 @@ export const EditTool = Tool.define("edit", {
     const finalUser = { role: "user" as const, content: `## Instructions\n${params.instructions}` }
 
     // Retry loop that covers generation, application, and diagnostics write.
-  let lastError = ""
-  let capturedSyntaxDiagnostics: any | undefined = undefined
+    let lastError = ""
+    let capturedSyntaxDiagnostics: any | undefined = undefined
     let summary = ""
     let code = ""
 
@@ -162,7 +168,8 @@ export const EditTool = Tool.define("edit", {
       }
 
       // Check rejection criteria (model returned no useful edit)
-      const isReject = !code || code.trim() === "" || /^\s*(?:\[?no\s*changes?]?|n\/a|null|undefined|#|\/\/|<!--)/i.test(code.trim())
+      const isReject =
+        !code || code.trim() === "" || /^\s*(?:\[?no\s*changes?]?|n\/a|null|undefined|#|\/\/|<!--)/i.test(code.trim())
       if (isReject) {
         lastError = summary || "Empty or invalid response"
         continue
