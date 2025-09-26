@@ -12,6 +12,7 @@ import { Instance } from "../project/instance"
 import { createTwoFilesPatch } from "diff"
 import { Permission } from "../permission"
 import { extractCodeFromMarkdown } from "./extract"
+import { readFile } from "fs/promises"
 import type { LSPClient } from "../lsp/client"
 
 // Specific error thrown when diagnostics report syntax/type errors after applying an edit
@@ -60,8 +61,19 @@ export function trimDiff(diff: string): string {
   return trimmedLines.join("\n")
 }
 
-// Shared function to handle LSP diagnostics and file writing
-export async function handleDiagnosticsAndFileWrite(filePath: string, contentNew: string, ctx: any) {
+// Shared function to handle LSP diagnostics, permission and file writing
+export async function handleDiagnosticsAndFileWrite(
+  filePath: string,
+  contentNew: string,
+  options: {
+    ctx: any
+    diff?: string
+    type?: "edit" | "write"
+    title?: string
+    skipPermission?: boolean
+  },
+) {
+  const { ctx, diff: diffOpt, type = "edit", title, skipPermission } = options
   const absolutePath = path.resolve(filePath)
 
   // Push virtual content and capture diagnostics map
@@ -85,6 +97,42 @@ export async function handleDiagnosticsAndFileWrite(filePath: string, contentNew
     throw new SyntaxErrorAfterEdit(errorMessage, fileDiagnostics)
   }
 
+  let diff: string
+  if (diffOpt) {
+    // Use provided diff directly
+    diff = trimDiff(diffOpt)
+  } else {
+    // Compute diff when not provided
+    let contentOld: string
+    try {
+      contentOld = await readFile(absolutePath, "utf-8")
+    } catch (err) {
+      try {
+        await LSP.revertVirtualContent(absolutePath)
+      } catch {}
+      throw err
+    }
+    const rawDiff = createTwoFilesPatch(filePath, filePath, contentOld, contentNew)
+    diff = trimDiff(rawDiff)
+  }
+
+  const permissionType: "edit" | "write" = type
+  // Prompt for permission after diagnostics pass, unless skipped
+  if (!skipPermission) {
+    const agent = await Agent.get(ctx.agent)
+    // Determine permission based on edit permission for both edit and write
+    if (agent.permission.edit === "ask") {
+      await Permission.ask({
+        type: permissionType,
+        sessionID: ctx.sessionID,
+        messageID: ctx.messageID,
+        callID: ctx.callID,
+        title: title ?? `${permissionType === "edit" ? "Edit" : "Write"} this file: ${absolutePath}`,
+        metadata: { filePath: absolutePath, diff },
+      })
+    }
+  }
+
   // Write file to disk
   try {
     await Bun.write(absolutePath, contentNew)
@@ -103,7 +151,7 @@ export async function handleDiagnosticsAndFileWrite(filePath: string, contentNew
   FileTime.read(ctx.sessionID, absolutePath)
   await LSP.touchFile(absolutePath)
 
-  return { diagnostics }
+  return { diagnostics, diff }
 }
 
 export { replace }

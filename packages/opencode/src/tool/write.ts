@@ -2,14 +2,11 @@ import z from "zod/v4"
 import * as path from "path"
 import { Tool } from "./tool"
 import { LSP } from "../lsp"
-import { Permission } from "../permission"
 import DESCRIPTION from "./write.txt"
-import { Bus } from "../bus"
-import { File } from "../file"
 import { FileTime } from "../file/time"
 import { Filesystem } from "../util/filesystem"
 import { Instance } from "../project/instance"
-import { Agent } from "../agent/agent"
+import { handleDiagnosticsAndFileWrite } from "../util/apply"
 
 export const WriteTool = Tool.define("write", {
   description: DESCRIPTION,
@@ -27,30 +24,15 @@ export const WriteTool = Tool.define("write", {
     const exists = await file.exists()
     if (exists) await FileTime.assert(ctx.sessionID, filepath)
 
-    const agent = await Agent.get(ctx.agent)
-    if (agent.permission.edit === "ask")
-      await Permission.ask({
-        type: "write",
-        sessionID: ctx.sessionID,
-        messageID: ctx.messageID,
-        callID: ctx.callID,
-        title: exists ? "Overwrite this file: " + filepath : "Create new file: " + filepath,
-        metadata: {
-          filePath: filepath,
-          content: params.content,
-          exists,
-        },
-      })
-
-    await Bun.write(filepath, params.content)
-    await Bus.publish(File.Event.Edited, {
-      file: filepath,
+    // Use centralized helper for diagnostics, permission check, and file writing
+    const { diagnostics } = await handleDiagnosticsAndFileWrite(filepath, params.content, {
+      ctx,
+      type: "write",
+      title: exists ? "Overwrite this file: " + filepath : "Create new file: " + filepath
     })
-    FileTime.read(ctx.sessionID, filepath)
 
     let output = ""
     await LSP.touchFile(filepath, true)
-    const diagnostics = await LSP.diagnostics()
     for (const [file, issues] of Object.entries(diagnostics)) {
       if (issues.length === 0) continue
       if (file === filepath) {

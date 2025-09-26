@@ -28,9 +28,7 @@ import {
   trimDiff,
   SyntaxErrorAfterEdit,
 } from "../util/apply"
-import { LSP } from "../lsp"
 import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../util/extract"
-import { Permission } from "../permission"
 import { createTwoFilesPatch } from "diff"
 // Re-export replace for existing tests that import from this module
 export { replace } from "../util/apply"
@@ -147,7 +145,6 @@ export const EditTool = Tool.define("edit", {
 
     // Retry loop that covers generation, application, and diagnostics write.
     let lastError = ""
-    let capturedSyntaxDiagnostics: any | undefined = undefined
     let summary = ""
     let code = ""
 
@@ -267,18 +264,6 @@ export const EditTool = Tool.define("edit", {
         const contentNew = result.contentNew ?? contentOld
         const diff = trimDiff(result.diff || createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
 
-        const agent = await Agent.get(ctx.agent)
-        if (agent?.permission.edit === "ask") {
-          await Permission.ask({
-            type: "edit",
-            sessionID: ctx.sessionID,
-            messageID: ctx.messageID,
-            callID: ctx.callID,
-            title: "Edit this file: " + filePath,
-            metadata: { filePath, diff },
-          })
-        }
-
         // Update status: running diagnostics
         ctx.metadata({
           title: `Editing ${path.relative(Instance.worktree, filePath)}`,
@@ -289,7 +274,11 @@ export const EditTool = Tool.define("edit", {
         })
 
         // This may throw a syntax-related exception; if so, retry.
-        const { diagnostics } = await handleDiagnosticsAndFileWrite(filePath, contentNew, ctx)
+        const { diagnostics } = await handleDiagnosticsAndFileWrite(filePath, contentNew, { 
+          ctx,
+          diff,
+          type: "edit"
+        })
 
         return {
           metadata: {
@@ -303,7 +292,6 @@ export const EditTool = Tool.define("edit", {
         // Retry only for the SyntaxErrorAfterEdit thrown by handleDiagnosticsAndFileWrite
         if (err instanceof SyntaxErrorAfterEdit) {
           lastError = err.message
-          capturedSyntaxDiagnostics = err.fileErrors
           // on last attempt we'll return the diagnostics captured from the exception
           continue
         }

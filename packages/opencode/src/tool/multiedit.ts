@@ -211,17 +211,8 @@ export const MultiEditTool = Tool.define("multiedit", {
                 .map((l) => l.slice(1))
                 .join("\n")
         const diff = trimDiff(createTwoFilesPatch(absPath, absPath, "", newContent))
-        if (agent?.permission.edit === "ask") {
-          await Permission.ask({
-            type: "write",
-            sessionID: ctx.sessionID,
-            messageID: ctx.messageID,
-            callID: ctx.callID,
-            title: "Create file: " + absPath,
-            metadata: { filePath: absPath, diff },
-          })
-        }
-        const { diagnostics } = await handleDiagnosticsAndFileWrite(absPath, newContent, ctx)
+        // Delegate permission and diagnostics to helper
+        const { diagnostics } = await handleDiagnosticsAndFileWrite(absPath, newContent, { ctx, diff, type: "write" })
         results.push({ file: relPath, action, diff, diagnostics })
         continue
       }
@@ -270,7 +261,8 @@ export const MultiEditTool = Tool.define("multiedit", {
           contentNew = result.contentNew ?? existingContent
           diff = result.diff
         }
-        const { diagnostics } = await handleDiagnosticsAndFileWrite(absPath, contentNew, ctx)
+        // Delegate permission and diagnostics to helper
+        const { diagnostics } = await handleDiagnosticsAndFileWrite(absPath, contentNew, { ctx, diff, type: "edit" })
         results.push({ file: relPath, action, diff, diagnostics })
         continue
       }
