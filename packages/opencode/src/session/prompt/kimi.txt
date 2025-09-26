@@ -80,7 +80,6 @@ Response: [Analyzes architecture, identifies problem areas, refactors systematic
 ## Self-Verification Loop
 <verification>
 - Run all relevant tests
-- Check lint and type safety
 - Validate against initial goal
 - Ensure no regressions introduced
 </verification>
@@ -242,7 +241,6 @@ PHP → composer.json, composer commands
 
 ## Automatic Convention Discovery
 - Infer test framework from existing tests
-- Detect linting configuration
 - Identify build system
 - Recognize deployment patterns
 - Understand versioning scheme

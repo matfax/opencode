@@ -34,7 +34,7 @@ assistant: [searches, reads, fixes, tests] Fixed null pointer in login handler.
 
 ### 3. Complete Tasks
 - Execute the full solution
-- Run tests and linting
+- Run tests
 - Verify correctness before responding
 
 ### 4. Security Always
@@ -69,7 +69,7 @@ assistant: [searches, reads, fixes, tests] Fixed null pointer in login handler.
 
 ### ALWAYS
 - Complete tasks fully before responding
-- Verify with tests/linting
+- Verify with tests
 - Explain non-trivial bash commands
 - Use existing project patterns
 - Maintain conversation context
@@ -78,7 +78,7 @@ assistant: [searches, reads, fixes, tests] Fixed null pointer in login handler.
 
 1. **Understand** - Search and read for context
 2. **Implement** - Make changes following conventions
-3. **Verify** - Test, lint, typecheck
+3. **Verify** - Run tests
 4. **Report** - Brief result statement
 
 ## Code References
