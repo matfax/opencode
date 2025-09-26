@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { extractCodeFromMarkdown } from "../../src/util/extract"
+import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../../src/util/extract"
 
 interface Case {
   name: string
@@ -54,5 +54,105 @@ describe("extractCodeFromMarkdown", () => {
   test.each(cases)("%s", (c) => {
     const out = extractCodeFromMarkdown(c.input)
     expect(out).toBe(c.expected)
+  })
+})
+
+interface SectionCase {
+  name: string
+  input: string
+  expected: { report: string; codePart: string }
+}
+
+const sectionCases: SectionCase[] = [
+  {
+    name: "xml tags with code fence",
+    input: [
+      "<report>",
+      "This is a report.",
+      "</report>",
+      "<code>",
+      "```js\nconsole.log('hi')\n```",
+      "</code>"
+    ].join("\n"),
+    expected: {
+      report: "This is a report.",
+      codePart: "console.log('hi')"
+    }
+  },
+  {
+    name: "xml tags with raw code",
+    input: [
+      "<report>",
+      "Report only.",
+      "</report>",
+      "<code>",
+      "raw code line",
+      "</code>"
+    ].join("\n"),
+    expected: {
+      report: "Report only.",
+      codePart: "raw code line"
+    }
+  },
+  {
+    name: "markdown headers with code fence",
+    input: [
+      "## Report",
+      "Header report.",
+      "## Code",
+      "```ts\nconst x = 2\n```"
+    ].join("\n"),
+    expected: {
+      report: "Header report.",
+      codePart: "const x = 2"
+    }
+  },
+  {
+    name: "markdown headers with raw code",
+    input: [
+      "## Report",
+      "Header report.",
+      "## Code",
+      "plain code"
+    ].join("\n"),
+    expected: {
+      report: "Header report.",
+      codePart: "plain code"
+    }
+  },
+  {
+    name: "only code header, no report",
+    input: [
+      "Some intro text",
+      "## Code",
+      "```py\nprint('hello')\n```"
+    ].join("\n"),
+    expected: {
+      report: "",
+      codePart: "print('hello')"
+    }
+  },
+  {
+    name: "no tags or headers, returns trimmed",
+    input: "  just code here  ",
+    expected: {
+      report: "",
+      codePart: "just code here"
+    }
+  },
+  {
+    name: "empty string",
+    input: "",
+    expected: {
+      report: "",
+      codePart: ""
+    }
+  }
+]
+
+describe("parseReportAndCodeSections", () => {
+  test.each(sectionCases)("%s", (c) => {
+    const out = parseReportAndCodeSections(c.input)
+    expect(out).toEqual(c.expected)
   })
 })
