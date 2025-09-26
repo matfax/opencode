@@ -161,7 +161,7 @@ export { replace }
 export async function applyEditOutput(
   editOutput: string,
   summary: string,
-  ctx: Tool.Context<*>,
+  ctx: Tool.Context<any>,
   filePath: string,
   contentOld: string,
 ) {

@@ -25,11 +25,9 @@ import {
   applyEditOutput,
   diffEditOutput,
   handleDiagnosticsAndFileWrite,
-  trimDiff,
   SyntaxErrorAfterEdit,
 } from "../util/apply"
 import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../util/extract"
-import { createTwoFilesPatch } from "diff"
 // Re-export replace for existing tests that import from this module
 export { replace } from "../util/apply"
 
