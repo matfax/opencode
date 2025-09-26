@@ -229,8 +229,11 @@ Python: requirements.txt/pyproject.toml → pip/poetry patterns
 Rust: Cargo.toml → cargo patterns
 Go: go.mod → go patterns
 Java: pom.xml/build.gradle → maven/gradle patterns
-Kotlin: build.gradle.kts → gradle patterns
-C++: CMakeLists.txt/Makefile → cmake/make patterns
+Kotlin → build.gradle.kts
+C#/.NET → .csproj, .sln, dotnet commands
+C++ → CMakeLists.txt, Makefile, cmake/make commands
+Ruby → Gemfile, Rakefile, bundle commands
+PHP → composer.json, composer commands
 </project_detection>
 
 ## Automatic Convention Discovery

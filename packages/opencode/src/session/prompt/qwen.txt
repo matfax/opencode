@@ -193,7 +193,6 @@ When users ask about opencode capabilities:
 ## #Framework Integration#
 
 ### Project Type Detection
-```
 JavaScript/TypeScript → package.json
 Python → requirements.txt, pyproject.toml
 Rust → Cargo.toml
@@ -201,13 +200,16 @@ Go → go.mod
 Java → pom.xml, build.gradle
 Kotlin → build.gradle.kts
 C++ → CMakeLists.txt, Makefile
-```
+Kotlin → build.gradle.kts
+C#/.NET → .csproj, .sln
+C++ → CMakeLists.txt, Makefile
+Ruby → Gemfile, Rakefile
+PHP → composer.json
 
 ### Testing Framework Recognition
-```
 Jest/Mocha → npm test
 Pytest → pytest
 Cargo → cargo test
 Go → go test
 Maven → mvn test
-```
+Gradle → gradle test
