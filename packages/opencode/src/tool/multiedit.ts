@@ -16,7 +16,7 @@ import { Bus } from "../bus"
 import { FileTime } from "../file/time"
 import { Permission } from "../permission"
 import fs from "fs/promises"
-import { parseReportAndCodeSections } from "../util/markdown"
+import { parseReportAndCodeSections } from "../util/extract"
 // @ts-ignore
 import MULTIEDIT_TEMPLATE from "./support/multiedit.txt"
 // @ts-ignore
