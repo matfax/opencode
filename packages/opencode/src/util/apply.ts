@@ -14,6 +14,7 @@ import { Permission } from "../permission"
 import { extractCodeFromMarkdown } from "./extract"
 import { readFile } from "fs/promises"
 import type { LSPClient } from "../lsp/client"
+import type { Tool } from "../tool/tool"
 
 // Specific error thrown when diagnostics report syntax/type errors after applying an edit
 export class SyntaxErrorAfterEdit extends Error {
@@ -160,7 +161,7 @@ export { replace }
 export async function applyEditOutput(
   editOutput: string,
   summary: string,
-  ctx: any,
+  ctx: Tool.Context<*>,
   filePath: string,
   contentOld: string,
 ) {
@@ -169,10 +170,12 @@ export async function applyEditOutput(
   // Silent fallback if no apply agent or model
   const modelInfo = applyAgent?.model
     ? await Provider.getModel(applyAgent.model.providerID, applyAgent.model.modelID)
-    : await (async () => {
-        const def = await Provider.defaultModel()
-        return Provider.getModel(def.providerID, def.modelID)
-      })()
+    : agent.model ?
+      await Provider.getModel(agent.model?.providerID, agent.model.modelID)
+      : await (async () => {
+          const def = await Provider.defaultModel()
+          return Provider.getModel(def.providerID, def.modelID)
+        })()
 
   let contentNew: string | undefined
   // Provider/model specific application
@@ -228,20 +231,6 @@ export async function applyEditOutput(
   }
   // Create diff for permission check
   const diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
-
-  if (agent.permission.edit === "ask") {
-    await Permission.ask({
-      type: "edit",
-      sessionID: ctx.sessionID,
-      messageID: ctx.messageID,
-      callID: ctx.callID,
-      title: "Edit this file: " + filePath,
-      metadata: {
-        filePath,
-        diff,
-      },
-    })
-  }
 
   return { contentNew, diff }
 }
@@ -384,8 +373,7 @@ export function applyDiffToContent(originalContent: string, diff: string): strin
 }
 
 // Use traditional diff method - edit output should be a proper diff
-export async function diffEditOutput(editOutput: string, ctx: any, filePath: string, contentOld: string) {
-  const agent = await Agent.get(ctx.agent)
+export async function diffEditOutput(editOutput: string, filePath: string, contentOld: string) {
 
   // Extract code from markdown code blocks if present
   const extractedCode = extractCodeFromMarkdown(editOutput)
@@ -407,23 +395,7 @@ export async function diffEditOutput(editOutput: string, ctx: any, filePath: str
     diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
   }
 
-  // For permission check, we need the actual modified content
-  // Parse the diff to apply changes to get contentNew
   const contentNew = applyDiffToContent(contentOld, diff)
-
-  if (agent.permission.edit === "ask") {
-    await Permission.ask({
-      type: "edit",
-      sessionID: ctx.sessionID,
-      messageID: ctx.messageID,
-      callID: ctx.callID,
-      title: "Edit this file: " + filePath,
-      metadata: {
-        filePath,
-        diff,
-      },
-    })
-  }
 
   return { contentNew, diff }
 }

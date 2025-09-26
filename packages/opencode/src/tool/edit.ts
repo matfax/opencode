@@ -41,7 +41,12 @@ function parseEditOutput(output: string): { summary: string; code: string } {
   const { report, codePart } = parseReportAndCodeSections(output)
   if (!report && !codePart) {
     const extractedCode = extractCodeFromMarkdown(output)
-    return { summary: "Code modifications applied", code: extractedCode }
+    throw new Error("Failed to parse edit output")
+    if (!extractedCode || extractedCode.trim() === "") {
+      throw new Error("No code found in model output")
+    } else {
+      return { summary: "Code modifications applied", code: extractedCode }
+    }
   }
   return { summary: report, code: codePart }
 }
@@ -257,12 +262,14 @@ export const EditTool = Tool.define("edit", {
         const applyAgent = await Agent.get("apply")
         const hasApplyModel = applyAgent?.model !== undefined
 
-        const result = hasApplyModel
+        const { contentNew, diff } = hasApplyModel
           ? await applyEditOutput(code, summary, ctx, filePath, contentOld)
-          : await diffEditOutput(code, ctx, filePath, contentOld)
+          : await diffEditOutput(code, filePath, contentOld)
 
-        const contentNew = result.contentNew ?? contentOld
-        const diff = trimDiff(result.diff || createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
+        if (contentNew === contentOld) {
+          lastError = "Apply model failed to integrate the snippet"
+          continue
+        }
 
         // Update status: running diagnostics
         ctx.metadata({

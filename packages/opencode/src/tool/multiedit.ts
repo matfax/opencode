@@ -257,7 +257,7 @@ export const MultiEditTool = Tool.define("multiedit", {
           diff = result.diff
         } else {
           const diffText = section.body.join("\n")
-          const result = await diffEditOutput(diffText, ctx, absPath, existingContent)
+          const result = await diffEditOutput(diffText, absPath, existingContent)
           contentNew = result.contentNew ?? existingContent
           diff = result.diff
         }
