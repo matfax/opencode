@@ -179,9 +179,9 @@ export const EditTool = Tool.define("edit", {
         // Fail fast: the model explicitly indicated a reason for no changes.
         const diagnostics = await LSP.diagnostics()
         return {
-          metadata: { diagnostics, diff: "" },
           title: `${path.relative(Instance.worktree, filePath)}`,
           output: summary || "Edit rejected by model",
+          metadata: { diagnostics, diff: "" },
         }
       }
 
@@ -245,9 +245,9 @@ export const EditTool = Tool.define("edit", {
     const diagnostics = capturedSyntaxDiagnostics ? { [filePath]: capturedSyntaxDiagnostics } : await LSP.diagnostics()
 
     return {
-      metadata: { diagnostics, diff: "" },
       title: `${path.relative(Instance.worktree, filePath)}`,
       output: lastError || "Edit rejected by model",
+      metadata: { diagnostics, diff: "" },
     }
   },
 })
