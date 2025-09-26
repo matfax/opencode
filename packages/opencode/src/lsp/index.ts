@@ -255,6 +255,29 @@ export namespace LSP {
       .then((result) => result.filter(Boolean))
   }
 
+  export async function pushVirtualContent(file: string, text: string) {
+    const abs = path.resolve(Instance.directory, file)
+    const clients = await getClients(abs)
+    if (clients.length === 0) return {}
+    for (const client of clients) {
+      await client.notify.open({ path: abs, text })
+      await client.waitForDiagnostics({ path: abs })
+    }
+    return diagnostics()
+  }
+
+  export async function revertVirtualContent(file: string, text?: string) {
+    const abs = path.resolve(Instance.directory, file)
+    const clients = await getClients(abs)
+    if (clients.length === 0) return {}
+    const resolvedText = text ?? (await Bun.file(abs).text())
+    for (const client of clients) {
+      await client.notify.open({ path: abs, text: resolvedText })
+      await client.waitForDiagnostics({ path: abs })
+    }
+    return diagnostics()
+  }
+
   async function run<T>(input: (client: LSPClient.Info) => Promise<T>): Promise<T[]> {
     const clients = await state().then((x) => x.clients)
     const tasks = clients.map((x) => input(x))

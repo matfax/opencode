@@ -12,11 +12,12 @@ import { Instance } from "../project/instance"
 import { createTwoFilesPatch } from "diff"
 import { Permission } from "../permission"
 import { extractCodeFromMarkdown } from "./extract"
+import type { LSPClient } from "../lsp/client"
 
 // Specific error thrown when diagnostics report syntax/type errors after applying an edit
 export class SyntaxErrorAfterEdit extends Error {
-  public fileErrors: any
-  constructor(message: string, fileErrors: any) {
+  public fileErrors: LSPClient.Diagnostic[]
+  constructor(message: string, fileErrors: LSPClient.Diagnostic[]) {
     super(message)
     this.name = "SyntaxErrorAfterEdit"
     this.fileErrors = fileErrors
@@ -61,24 +62,46 @@ export function trimDiff(diff: string): string {
 
 // Shared function to handle LSP diagnostics and file writing
 export async function handleDiagnosticsAndFileWrite(filePath: string, contentNew: string, ctx: any) {
-  await LSP.touchFile(filePath, true)
-  const diagnostics = await LSP.diagnostics()
+  const absolutePath = path.resolve(filePath)
 
-  // Check for errors in the target file
-  const fileErrors = diagnostics[filePath]?.filter((item) => item.severity === 1) || []
-
-  if (fileErrors.length > 0) {
-    const errorMessage = `File has errors after edit:\n${fileErrors.map(LSP.Diagnostic.pretty).join("\n")}`
-    // Throw a specific error type so callers can detect syntax-check failures separately
-    throw new SyntaxErrorAfterEdit(errorMessage, fileErrors)
+  // Push virtual content and capture diagnostics map
+  let diagnostics: Record<string, LSPClient.Diagnostic[]>
+  try {
+    diagnostics = await LSP.pushVirtualContent(absolutePath, contentNew)
+  } catch (err) {
+    try {
+      await LSP.revertVirtualContent(absolutePath)
+    } catch {}
+    throw err
   }
 
-  // Write the modified content
-  await Bun.write(filePath, contentNew)
-  await Bus.publish(File.Event.Edited, {
-    file: filePath,
-  })
-  FileTime.read(ctx.sessionID, filePath)
+  // Filter for severity-1 errors
+  const fileDiagnostics = diagnostics[absolutePath]?.filter((diag: LSPClient.Diagnostic) => diag.severity === 1) || []
+  if (fileDiagnostics.length > 0) {
+    try {
+      await LSP.revertVirtualContent(absolutePath)
+    } catch {}
+    const errorMessage = `File has errors after edit:\n${fileDiagnostics.map(LSP.Diagnostic.pretty).join("\n")}`
+    throw new SyntaxErrorAfterEdit(errorMessage, fileDiagnostics)
+  }
+
+  // Write file to disk
+  try {
+    await Bun.write(absolutePath, contentNew)
+  } catch (err) {
+    try {
+      await LSP.revertVirtualContent(absolutePath)
+    } catch {}
+    throw err
+  }
+
+  // Restore virtual document, then publish edit and update timestamps
+  try {
+    await LSP.revertVirtualContent(absolutePath)
+  } catch {}
+  await Bus.publish(File.Event.Edited, { file: absolutePath })
+  FileTime.read(ctx.sessionID, absolutePath)
+  await LSP.touchFile(absolutePath)
 
   return { diagnostics }
 }

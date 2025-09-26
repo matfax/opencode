@@ -128,10 +128,11 @@ export namespace LSPClient {
         return connection
       },
       notify: {
-        async open(input: { path: string }) {
+        async open(input: { path: string; text?: string }) {
           input.path = path.isAbsolute(input.path) ? input.path : path.resolve(Instance.directory, input.path)
-          const file = Bun.file(input.path)
-          const text = await file.text()
+
+          const textContent = input.text ?? (await Bun.file(input.path).text())
+
           const extension = path.extname(input.path)
           const languageId = LANGUAGE_EXTENSIONS[extension] ?? "plaintext"
 
@@ -145,7 +146,7 @@ export namespace LSPClient {
                 uri: `file://` + input.path,
                 version: next,
               },
-              contentChanges: [{ text }],
+              contentChanges: [{ text: textContent }],
             })
             return
           }
@@ -157,7 +158,7 @@ export namespace LSPClient {
               uri: `file://` + input.path,
               languageId,
               version: 0,
-              text,
+              text: textContent,
             },
           })
           files[input.path] = 0
