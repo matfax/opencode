@@ -170,8 +170,8 @@ export async function applyEditOutput(
   // Silent fallback if no apply agent or model
   const modelInfo = applyAgent?.model
     ? await Provider.getModel(applyAgent.model.providerID, applyAgent.model.modelID)
-    : agent.model ?
-      await Provider.getModel(agent.model?.providerID, agent.model.modelID)
+    : agent.model
+      ? await Provider.getModel(agent.model?.providerID, agent.model.modelID)
       : await (async () => {
           const def = await Provider.defaultModel()
           return Provider.getModel(def.providerID, def.modelID)
@@ -374,7 +374,6 @@ export function applyDiffToContent(originalContent: string, diff: string): strin
 
 // Use traditional diff method - edit output should be a proper diff
 export async function diffEditOutput(editOutput: string, filePath: string, contentOld: string) {
-
   // Extract code from markdown code blocks if present
   const extractedCode = extractCodeFromMarkdown(editOutput)
   let diff = extractedCode.trim()

@@ -186,18 +186,11 @@ export function Part(props: PartProps) {
             <Spacer />
           </div>
         )}
-        {props.part.type === "tool" &&
-          props.part.state.status === "running" &&
-          props.message.role === "assistant" && (
-            <div data-component="tool" data-tool={props.part.tool}>
-              <RunningTool
-                message={props.message}
-                id={props.part.id}
-                tool={props.part.tool}
-                state={props.part.state}
-              />
-            </div>
-          )}
+        {props.part.type === "tool" && props.part.state.status === "running" && props.message.role === "assistant" && (
+          <div data-component="tool" data-tool={props.part.tool}>
+            <RunningTool message={props.message} id={props.part.id} tool={props.part.tool} state={props.part.state} />
+          </div>
+        )}
         {props.part.type === "tool" &&
           props.part.state.status === "completed" &&
           props.message.role === "assistant" && (
@@ -331,16 +324,26 @@ interface Todo {
 function RunningTool(props: RunningToolProps) {
   const getToolName = () => {
     switch (props.tool) {
-      case "edit": return "Edit"
-      case "bash": return "Bash"
-      case "read": return "Read"
-      case "write": return "Write"
-      case "grep": return "Grep"
-      case "list": return "List"
-      case "glob": return "Glob"
-      case "webfetch": return "Web Fetch"
-      case "task": return "Task"
-      default: return props.tool
+      case "edit":
+        return "Edit"
+      case "bash":
+        return "Bash"
+      case "read":
+        return "Read"
+      case "write":
+        return "Write"
+      case "grep":
+        return "Grep"
+      case "list":
+        return "List"
+      case "glob":
+        return "Glob"
+      case "webfetch":
+        return "Web Fetch"
+      case "task":
+        return "Task"
+      default:
+        return props.tool
     }
   }
 

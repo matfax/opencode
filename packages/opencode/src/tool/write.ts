@@ -28,7 +28,7 @@ export const WriteTool = Tool.define("write", {
     const { diagnostics } = await handleDiagnosticsAndFileWrite(filepath, params.content, {
       ctx,
       type: "write",
-      title: exists ? "Overwrite this file: " + filepath : "Create new file: " + filepath
+      title: exists ? "Overwrite this file: " + filepath : "Create new file: " + filepath,
     })
 
     let output = ""

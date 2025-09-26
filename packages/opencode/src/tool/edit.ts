@@ -21,12 +21,7 @@ import { Provider } from "../provider/provider"
 import { Template } from "../util/template"
 import { generateText } from "ai"
 // Shared apply & utility functions
-import {
-  applyEditOutput,
-  diffEditOutput,
-  handleDiagnosticsAndFileWrite,
-  SyntaxErrorAfterEdit,
-} from "../util/apply"
+import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite, SyntaxErrorAfterEdit } from "../util/apply"
 import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../util/extract"
 // Re-export replace for existing tests that import from this module
 export { replace } from "../util/apply"
@@ -125,7 +120,6 @@ export const EditTool = Tool.define("edit", {
       content: `// File: ${path.relative(Instance.directory, filePath)}\n${contentOld}`,
     })
     if (params.relevantFiles) {
-
       // Update status: building context
       ctx.metadata({
         title: `Editing ${path.relative(Instance.worktree, filePath)}`,
@@ -229,9 +223,7 @@ export const EditTool = Tool.define("edit", {
       }
 
       const isEmptyCode = !code || code.trim() === ""
-      const looksLikeNoChange = /^\s*(?:\[?no\s*changes?]?|n\/a|null|undefined|#|\/\/|<!--)/i.test(
-        (code || "").trim(),
-      )
+      const looksLikeNoChange = /^\s*(?:\[?no\s*changes?]?|n\/a|null|undefined|#|\/\/|<!--)/i.test((code || "").trim())
 
       if (isEmptyCode && summary && summary.trim() !== "") {
         throw new Error(summary || "Edit rejected by model")
@@ -279,10 +271,10 @@ export const EditTool = Tool.define("edit", {
         })
 
         // This may throw a syntax-related exception; if so, retry.
-        const { diagnostics } = await handleDiagnosticsAndFileWrite(filePath, contentNew, { 
+        const { diagnostics } = await handleDiagnosticsAndFileWrite(filePath, contentNew, {
           ctx,
           diff,
-          type: "edit"
+          type: "edit",
         })
 
         return {

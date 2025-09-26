@@ -41,22 +41,27 @@ export function extractCodeFromMarkdown(text: string): string {
 // and codePart with code fences removed via extractCodeFromMarkdown.
 export function parseReportAndCodeSections(raw: string): { report: string; codePart: string } {
   if (!raw) return { report: "", codePart: "" }
-  
+
   const lower = raw.toLowerCase()
-  
+
   // First try XML-like tags
   const reportTagStart = lower.indexOf("<report>")
   const reportTagEnd = lower.indexOf("</report>")
   const codeTagStart = lower.indexOf("<code>")
   const codeTagEnd = lower.indexOf("</code>")
-  
-  if (reportTagStart !== -1 && reportTagEnd !== -1 && codeTagStart !== -1 && codeTagEnd !== -1 && 
-      codeTagStart > reportTagEnd) {
+
+  if (
+    reportTagStart !== -1 &&
+    reportTagEnd !== -1 &&
+    codeTagStart !== -1 &&
+    codeTagEnd !== -1 &&
+    codeTagStart > reportTagEnd
+  ) {
     const report = raw.slice(reportTagStart + "<report>".length, reportTagEnd).trim()
     const codePart = raw.slice(codeTagStart + "<code>".length, codeTagEnd).trim()
     return { report, codePart: extractCodeFromMarkdown(codePart) }
   }
-  
+
   // Fall back to markdown-style headers
   const reportIdx = lower.indexOf("## report")
   const codeIdx = lower.indexOf("## code")
