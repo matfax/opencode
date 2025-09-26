@@ -228,22 +228,13 @@ export const EditTool = Tool.define("edit", {
         currentFormat = Template.Format.Diff
       }
 
-      // Check rejection criteria (model returned no useful edit).
-      // If the model returned an empty code section but provided a non-empty
-      // summary/reason, fail early and return that reason (no retries).
       const isEmptyCode = !code || code.trim() === ""
       const looksLikeNoChange = /^\s*(?:\[?no\s*changes?]?|n\/a|null|undefined|#|\/\/|<!--)/i.test(
         (code || "").trim(),
       )
 
       if (isEmptyCode && summary && summary.trim() !== "") {
-        // Fail fast: the model explicitly indicated a reason for no changes.
-        const diagnostics = await LSP.diagnostics()
-        return {
-          title: `${path.relative(Instance.worktree, filePath)}`,
-          output: summary || "Edit rejected by model",
-          metadata: { diagnostics, diff: "" },
-        }
+        throw new Error(summary || "Edit rejected by model")
       }
 
       const isReject = isEmptyCode || looksLikeNoChange
@@ -321,14 +312,6 @@ export const EditTool = Tool.define("edit", {
       }
     }
 
-    // Exhausted retries: include LSP diagnostics in the response so caller sees the error details
-    // If we captured syntax errors from the last SyntaxErrorAfterEdit, prefer those diagnostics
-    const diagnostics = capturedSyntaxDiagnostics ? { [filePath]: capturedSyntaxDiagnostics } : await LSP.diagnostics()
-
-    return {
-      title: `${path.relative(Instance.worktree, filePath)}`,
-      output: lastError || "Edit rejected by model",
-      metadata: { diagnostics, diff: "" },
-    }
+    throw new Error("Too many failed edit attempts: " + lastError)
   },
 })
