@@ -34,7 +34,6 @@ Reporting:
 - The report should not blindly repeat the requirements but expose information useful for the primary agent
 
 Provide your response in this format:
-
 <report>
 [Brief natural language report of what was changed for the primary agent's context. The length should be proportional to the complexity of the changes, typically 2-4 sentences. Include any assumptions made or issues encountered.]
 </report>

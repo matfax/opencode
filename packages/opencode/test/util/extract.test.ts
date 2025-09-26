@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { extractCodeFromMarkdown } from "../../src/util/markdown"
+import { extractCodeFromMarkdown } from "../../src/util/extract"
 
 interface Case {
   name: string

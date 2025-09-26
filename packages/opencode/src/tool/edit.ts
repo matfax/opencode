@@ -29,7 +29,7 @@ import {
   SyntaxErrorAfterEdit,
 } from "../util/apply"
 import { LSP } from "../lsp"
-import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../util/markdown"
+import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../util/extract"
 import { Permission } from "../permission"
 import { createTwoFilesPatch } from "diff"
 // Re-export replace for existing tests that import from this module
@@ -77,6 +77,15 @@ export const EditTool = Tool.define("edit", {
       throw new Error(`File ${filePath} is not in the current working directory`)
     }
 
+    // Update status: reading file
+    ctx.metadata({
+      title: `Editing ${path.relative(Instance.worktree, filePath)}`,
+      metadata: {
+        status: "Reading target file",
+        filePath: filePath,
+      },
+    })
+
     // Read the target file
     const file = Bun.file(filePath)
     const stats = await file.stat().catch(() => {})
@@ -84,6 +93,15 @@ export const EditTool = Tool.define("edit", {
     if (stats.isDirectory()) throw new Error(`Path is a directory, not a file: ${filePath}`)
 
     const contentOld = await file.text()
+
+    // Update status: resolving agents
+    ctx.metadata({
+      title: `Editing ${path.relative(Instance.worktree, filePath)}`,
+      metadata: {
+        status: "Resolving edit agents and models",
+        filePath: filePath,
+      },
+    })
 
     // Resolve edit and apply agents and models
     const editAgent = await Agent.get("edit")
@@ -106,6 +124,16 @@ export const EditTool = Tool.define("edit", {
       content: `// File: ${path.relative(Instance.directory, filePath)}\n${contentOld}`,
     })
     if (params.relevantFiles) {
+
+      // Update status: building context
+      ctx.metadata({
+        title: `Editing ${path.relative(Instance.worktree, filePath)}`,
+        metadata: {
+          status: "Building contextual messages",
+          filePath: filePath,
+        },
+      })
+
       for (const rel of params.relevantFiles) {
         try {
           const abs = path.isAbsolute(rel) ? rel : path.join(Instance.directory, rel)
@@ -124,6 +152,17 @@ export const EditTool = Tool.define("edit", {
     let code = ""
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      // Update status: preparing prompt
+      ctx.metadata({
+        title: `Editing ${path.relative(Instance.worktree, filePath)}`,
+        metadata: {
+          status: `Preparing prompt (attempt ${attempt}/${MAX_RETRIES})`,
+          filePath: filePath,
+          attempt: attempt,
+          maxRetries: MAX_RETRIES,
+        },
+      })
+
       // Build system messages for this format
       const example = currentFormat === Template.Format.Snippet ? SNIPPET_EXAMPLE : DIFF_EXAMPLE
       const substituted = await Template.substituteInputs(await Template.substitute(EDIT_TEMPLATE), {
@@ -140,6 +179,17 @@ export const EditTool = Tool.define("edit", {
       }
       messages.push(finalUser)
 
+      // Update status: calling model
+      ctx.metadata({
+        title: `Editing ${path.relative(Instance.worktree, filePath)}`,
+        metadata: {
+          status: `Calling AI model (attempt ${attempt}/${MAX_RETRIES})`,
+          filePath: filePath,
+          attempt: attempt,
+          maxRetries: MAX_RETRIES,
+        },
+      })
+
       // Call LLM once per attempt. Fail fast if the model call itself fails.
       let editGen
       try {
@@ -153,6 +203,17 @@ export const EditTool = Tool.define("edit", {
         // Fail fast on model errors (do not retry)
         throw new Error(`Edit model call failed: ${err?.message || String(err)}`)
       }
+
+      // Update status: parsing output
+      ctx.metadata({
+        title: `Editing ${path.relative(Instance.worktree, filePath)}`,
+        metadata: {
+          status: `Parsing model output (attempt ${attempt}/${MAX_RETRIES})`,
+          filePath: filePath,
+          attempt: attempt,
+          maxRetries: MAX_RETRIES,
+        },
+      })
 
       const editOutput = editGen.text
       const parsed = parseEditOutput(editOutput)
@@ -187,9 +248,20 @@ export const EditTool = Tool.define("edit", {
 
       const isReject = isEmptyCode || looksLikeNoChange
       if (isReject) {
-        lastError = summary || "Empty or invalid response"
+        lastError = summary || "Edit rejected with missing explanation"
         continue
       }
+
+      // Update status: applying edit
+      ctx.metadata({
+        title: `Editing ${path.relative(Instance.worktree, filePath)}`,
+        metadata: {
+          status: `Applying edit (attempt ${attempt}/${MAX_RETRIES})`,
+          filePath: filePath,
+          attempt: attempt,
+          maxRetries: MAX_RETRIES,
+        },
+      })
 
       // Try to apply the edit and run diagnostics/write. If diagnostics indicate syntax errors,
       // allow another retry. Fail fast for other errors (including model failures inside apply).
@@ -215,6 +287,15 @@ export const EditTool = Tool.define("edit", {
             metadata: { filePath, diff },
           })
         }
+
+        // Update status: running diagnostics
+        ctx.metadata({
+          title: `Editing ${path.relative(Instance.worktree, filePath)}`,
+          metadata: {
+            status: "Running diagnostics and writing file",
+            filePath: filePath,
+          },
+        })
 
         // This may throw a syntax-related exception; if so, retry.
         const { diagnostics } = await handleDiagnosticsAndFileWrite(filePath, contentNew, ctx)

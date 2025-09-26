@@ -11,7 +11,7 @@ import * as path from "path"
 import { Instance } from "../project/instance"
 import { createTwoFilesPatch } from "diff"
 import { Permission } from "../permission"
-import { extractCodeFromMarkdown } from "./markdown"
+import { extractCodeFromMarkdown } from "./extract"
 
 // Specific error thrown when diagnostics report syntax/type errors after applying an edit
 export class SyntaxErrorAfterEdit extends Error {
