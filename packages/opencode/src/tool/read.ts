@@ -20,8 +20,8 @@ export const ReadTool = Tool.define("read", {
   description: DESCRIPTION,
   parameters: z.object({
     filePath: z.string().describe("The path to the file to read"),
-    offset: z.coerce.number().describe("The line number to start reading from (0-based)").optional().default(0),
-    limit: z.coerce.number().describe("The number of lines to read").optional().default(DEFAULT_READ_LIMIT),
+    limit: z.coerce.number().optional().describe("The number of lines to read").default(DEFAULT_READ_LIMIT),
+    offset: z.coerce.number().optional().describe("The line number to start reading from (0-based)").default(0),
     autoSummarize: z.boolean().optional().describe("Automatically summarize the file if it exceeds the line limit"),
     prompt: z
       .string()
@@ -74,7 +74,7 @@ export const ReadTool = Tool.define("read", {
     const lines = await file.text().then((text) => text.split("\n"))
 
     // Check if auto-summarize should trigger
-    const shouldAutoSummarize = params.autoSummarize && !params.offset && lines.length > limit
+    const shouldAutoSummarize = !!params.autoSummarize && !params.offset && lines.length > limit
 
     if (shouldAutoSummarize) {
       // Get full file content for summarization
