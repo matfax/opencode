@@ -21,7 +21,9 @@ export const GrepTool = Tool.define("grep", {
       throw new Error("pattern is required")
     }
 
-    const searchPath = params.path || Instance.directory
+    // Trim whitespace from optional path parameter
+    const trimmedPath = params.path?.trim()
+    const searchPath = trimmedPath && trimmedPath !== "" ? trimmedPath : Instance.directory
 
     const rgPath = await Ripgrep.filepath()
     const args = ["-n", params.pattern]

@@ -21,8 +21,10 @@ export const GlobTool = Tool.define("glob", {
   key: (p) => ["glob", p.path || ".", p.pattern].join("|"),
   expireAfter: (_p) => DEFAULT_EXPIRATION,
   async execute(params) {
-    let search = params.path ?? Instance.directory
-    search = path.isAbsolute(search) ? search : path.resolve(Instance.directory, search)
+    const defaultDirectory = Instance.directory.trim()
+    const rawPath = params.path?.trim()
+    let search = rawPath ?? defaultDirectory
+    search = path.isAbsolute(search) ? search : path.resolve(defaultDirectory, search)
 
     const limit = 100
     const files = []
