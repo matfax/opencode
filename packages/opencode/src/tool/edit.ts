@@ -167,9 +167,25 @@ export const EditTool = Tool.define("edit", {
         currentFormat = Template.Format.Diff
       }
 
-      // Check rejection criteria (model returned no useful edit)
-      const isReject =
-        !code || code.trim() === "" || /^\s*(?:\[?no\s*changes?]?|n\/a|null|undefined|#|\/\/|<!--)/i.test(code.trim())
+      // Check rejection criteria (model returned no useful edit).
+      // If the model returned an empty code section but provided a non-empty
+      // summary/reason, fail early and return that reason (no retries).
+      const isEmptyCode = !code || code.trim() === ""
+      const looksLikeNoChange = /^\s*(?:\[?no\s*changes?]?|n\/a|null|undefined|#|\/\/|<!--)/i.test(
+        (code || "").trim(),
+      )
+
+      if (isEmptyCode && summary && summary.trim() !== "") {
+        // Fail fast: the model explicitly indicated a reason for no changes.
+        const diagnostics = await LSP.diagnostics()
+        return {
+          metadata: { diagnostics, diff: "" },
+          title: `${path.relative(Instance.worktree, filePath)}`,
+          output: summary || "Edit rejected by model",
+        }
+      }
+
+      const isReject = isEmptyCode || looksLikeNoChange
       if (isReject) {
         lastError = summary || "Empty or invalid response"
         continue

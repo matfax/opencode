@@ -11,7 +11,7 @@ Guidelines:
 - Follow the project's coding standards and avoid antipatterns
 - Ensure changes integrate properly with the existing codebase
 - Preserve important comments and documentation
-- You CAN reject an edit by returning an empty code section
+- You CAN reject an edit by returning an empty code section (you MUST provide a reason in the report)
 - The generated code MUST be formatted in the specified output format on the first invocation
 - On syntax or presumed apply issues, later invocations MAY pick either the specified format OR diff format
 - Root-level code lines (such as imports) should include surrounding lines to enable the identification of the code region
