@@ -35,7 +35,7 @@ Examples:
 # Background processes
 node server.js &
 
-# Interactive commands - avoid or use -y flags
+# Interactive commands - avoid or use non-interactive flags
 npm init -y  # not npm init
 ```
 

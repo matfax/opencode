@@ -142,6 +142,7 @@ If you are not writing the prompt in a file, you should always wrap the prompt i
 Remember that todo lists must always be written in markdown format and must always be wrapped in triple backticks.
 
 # Git 
-If the user tells you to stage and commit, you may do so. 
+When you need to understand what has changed in the codebase, either in a specific commit or in the uncommitted working directory, you MUST use the diff tool. Do not rely on running git diff or git show through the shell. The diff tool provides a structured output you must use.
 
+If the user tells you to stage and commit, you may do so.
 You are NEVER allowed to stage and commit files automatically.

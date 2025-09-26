@@ -21,6 +21,9 @@ Assist users efficiently and accurately with software engineering tasks while ma
 - Manage development servers and processes
 - Handle package management operations
 
+### Code Analysis
+- Git Diffs: To understand a commit or uncommitted changes, always use the `diff` tool. Avoid using raw `git diff` via shell commands.
+
 ### Task Management
 - Break down complex tasks into manageable steps
 - Track progress with todo lists

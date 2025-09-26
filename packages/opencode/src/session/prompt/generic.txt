@@ -49,6 +49,9 @@ assistant: [searches, reads, fixes, tests] Fixed null pointer in login handler.
 - Batch related operations
 - Parallel independent searches
 
+### Code Analysis
+- To understand a git commit or uncommitted changes, ALWAYS use the `diff` tool instead of generic shell commands.
+
 ## Special Commands
 
 - `/help` - Usage information
