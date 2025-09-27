@@ -37,8 +37,10 @@ function parseEditOutput(output: string): { summary: string; code: string } {
     if (!extractedCode || extractedCode.trim() === "") {
       throw new Error("No code found in model output: " + output)
     } else {
-      return { summary: "Code modifications applied", code: extractedCode }
+      return { summary: "No summary provided", code: extractedCode }
     }
+  } else if (!codePart || codePart.trim() === "") {
+    throw new Error("Edit rejected: " + output)
   }
   return { summary: report, code: codePart }
 }
@@ -74,7 +76,6 @@ export const EditTool = Tool.define("edit", {
 
     // Update status: reading file
     ctx.metadata({
-      title: `Editing ${path.relative(Instance.worktree, filePath)}`,
       metadata: {
         status: "Reading target file",
         filePath: filePath,
@@ -91,7 +92,6 @@ export const EditTool = Tool.define("edit", {
 
     // Update status: resolving agents
     ctx.metadata({
-      title: `Editing ${path.relative(Instance.worktree, filePath)}`,
       metadata: {
         status: "Resolving edit agents and models",
         filePath: filePath,
@@ -121,7 +121,6 @@ export const EditTool = Tool.define("edit", {
     if (params.relevantFiles) {
       // Update status: building context
       ctx.metadata({
-        title: `Editing ${path.relative(Instance.worktree, filePath)}`,
         metadata: {
           status: "Building contextual messages",
           filePath: filePath,
@@ -147,7 +146,6 @@ export const EditTool = Tool.define("edit", {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       // Update status: preparing prompt
       ctx.metadata({
-        title: `Editing ${path.relative(Instance.worktree, filePath)}`,
         metadata: {
           status: `Preparing prompt (attempt ${attempt}/${MAX_RETRIES})`,
           filePath: filePath,
@@ -157,6 +155,7 @@ export const EditTool = Tool.define("edit", {
       })
 
       // Build system messages for this format
+      currentFormat = attempt <= 2 ? currentFormat : Template.Format.Diff
       const example = currentFormat === Template.Format.Snippet ? SNIPPET_EXAMPLE : DIFF_EXAMPLE
       const substituted = await Template.substituteInputs(await Template.substitute(EDIT_TEMPLATE), {
         format: currentFormat,
@@ -174,7 +173,6 @@ export const EditTool = Tool.define("edit", {
 
       // Update status: calling model
       ctx.metadata({
-        title: `Editing ${path.relative(Instance.worktree, filePath)}`,
         metadata: {
           status: `Calling AI model (attempt ${attempt}/${MAX_RETRIES})`,
           filePath: filePath,
@@ -199,7 +197,6 @@ export const EditTool = Tool.define("edit", {
 
       // Update status: parsing output
       ctx.metadata({
-        title: `Editing ${path.relative(Instance.worktree, filePath)}`,
         metadata: {
           status: `Parsing model output (attempt ${attempt}/${MAX_RETRIES})`,
           filePath: filePath,
@@ -209,34 +206,16 @@ export const EditTool = Tool.define("edit", {
       })
 
       const editOutput = editGen.text
-      const parsed = parseEditOutput(editOutput)
-      summary = parsed.summary
-      code = parsed.code
+      const { summary, code } = parseEditOutput(editOutput)
 
       // Detect diff vs snippet for next iteration
-      const looksLikeDiff = /^\s*(diff\s|@@)/m.test(code)
-      if (attempt < MAX_RETRIES) {
+      if (currentFormat != Template.Format.Diff) {
+        const looksLikeDiff = /^\s*(diff\s|@@)/m.test(code)
         currentFormat = looksLikeDiff ? Template.Format.Diff : Template.Format.Snippet
-      } else {
-        currentFormat = Template.Format.Diff
-      }
-
-      const isEmptyCode = !code || code.trim() === ""
-      const looksLikeNoChange = /^\s*(?:\[?no\s*changes?]?|n\/a|null|undefined|#|\/\/|<!--)/i.test((code || "").trim())
-
-      if (isEmptyCode && summary && summary.trim() !== "") {
-        throw new Error(summary || "Edit rejected by model")
-      }
-
-      const isReject = isEmptyCode || looksLikeNoChange
-      if (isReject) {
-        lastError = summary || "Edit rejected with missing explanation"
-        continue
       }
 
       // Update status: applying edit
       ctx.metadata({
-        title: `Editing ${path.relative(Instance.worktree, filePath)}`,
         metadata: {
           status: `Applying edit (attempt ${attempt}/${MAX_RETRIES})`,
           filePath: filePath,
@@ -251,18 +230,19 @@ export const EditTool = Tool.define("edit", {
         const applyAgent = await Agent.get("apply")
         const hasApplyModel = applyAgent?.model !== undefined
 
-        const { contentNew, diff } = hasApplyModel
+        const { contentNew, diff } = hasApplyModel && currentFormat === Template.Format.Snippet
           ? await applyEditOutput(code, summary, ctx, filePath, contentOld)
           : await diffEditOutput(code, filePath, contentOld)
 
         if (contentNew === contentOld) {
-          lastError = "Apply model failed to integrate the snippet"
+          lastError = currentFormat === Template.Format.Snippet 
+            ? "Apply model failed to integrate the snippet" 
+            : "Diff did not result in any changes"
           continue
         }
 
         // Update status: running diagnostics
         ctx.metadata({
-          title: `Editing ${path.relative(Instance.worktree, filePath)}`,
           metadata: {
             status: "Running diagnostics and writing file",
             filePath: filePath,
@@ -281,7 +261,6 @@ export const EditTool = Tool.define("edit", {
             diagnostics,
             diff: diff,
           },
-          title: `${path.relative(Instance.worktree, filePath)}`,
           output: summary || "Edit applied successfully",
         }
       } catch (err: any) {
