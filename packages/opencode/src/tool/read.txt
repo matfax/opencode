@@ -16,13 +16,17 @@ Usage:
 - Any lines longer than the `limit` will be truncated or summarized if the `query` parameter is set
 - Results are returned using cat -n format, with line numbers starting at 1
 - If you have no knowledge of the precise file path, first use the grep or glob tool to search for files
-- IMPORTANT: Due to the garbage collection mechanism, instead of iteratively reading different parts of a file, expand the existing offset and limit to until it covers the full section of interest
-- You MAY also move the offset and limit window IF you determine that a section you've read is not relevant
+- IMPORTANT: Due to the garbage collection mechanism, instead of iteratively reading different parts of a file, expand the existing limit (and offset inversely) until it covers the full section of interest
+- NEVER shift the sliding window and expect to retain prior context, as prior reads will be garbage collected
+- You MAY also move the offset and limit window ONLY IF you determine that a section you've read is not relevant
 
 Auto-summarization notes:
 - Only triggers when `query` parameter, no `offset` is specified, and file exceeds line limit
 - Summarization uses the full file content for better accuracy
 - Ideal for documentation, README files, large configuration files, and extensive code files
 - Describe what to focus on in the `query` parameter to guide the summary
+
+Example for intentional auto-summarization (limit=10, offset=undefined):
+query='What exception types are thrown by functions in this file?'
 
 Prefer this tool for reading the main subject of the conversation, or files that are not code (e.g. configuration files, documentation, logs).
