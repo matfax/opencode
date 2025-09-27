@@ -20,8 +20,8 @@ export const ReadTool = Tool.define("read", {
   description: DESCRIPTION,
   parameters: z.object({
     filePath: z.string().describe("The path to the file to read"),
-    limit: z.coerce.number().optional().describe("The number of lines to read").default(DEFAULT_READ_LIMIT),
-    offset: z.coerce.number().optional().describe("The line number to start reading from (0-based)").default(0),
+    limit: z.coerce.number().optional().default(DEFAULT_READ_LIMIT).describe("The number of lines to read"),
+    offset: z.coerce.number().optional().default(0).describe("The line number to start reading from (0-based)"),
     autoSummarize: z.boolean().optional().describe("Automatically summarize the file if it exceeds the line limit"),
     prompt: z
       .string()
@@ -65,7 +65,8 @@ export const ReadTool = Tool.define("read", {
       throw new Error(`File not found: ${filepath}`)
     }
 
-    const limit = params.limit ?? DEFAULT_READ_LIMIT
+    const limit = Math.max(params.limit ?? DEFAULT_READ_LIMIT, 1)
+    const offset = Math.max(params.offset ?? 0, 0)
     const isImage = isImageFile(filepath)
     if (isImage) throw new Error(`This is an image file of type: ${isImage}\nUse a different tool to process images`)
     const isBinary = await isBinaryFile(filepath, file)
@@ -119,19 +120,19 @@ export const ReadTool = Tool.define("read", {
       }
     }
 
-    const raw = lines.slice(params.offset, params.offset + limit).map((line) => {
+    const raw = lines.slice(offset, offset + limit).map((line) => {
       return line.length > MAX_LINE_LENGTH ? line.substring(0, MAX_LINE_LENGTH) + "..." : line
     })
     const content = raw.map((line, index) => {
-      return `${(index + params.offset + 1).toString().padStart(5, "0")}| ${line}`
+      return `${(index + offset + 1).toString().padStart(5, "0")}| ${line}`
     })
     const preview = raw.slice(0, 20).join("\n")
 
     let output = "<file>\n"
     output += content.join("\n")
 
-    if (lines.length > params.offset + content.length) {
-      output += `\n\n(File has more lines. Use 'offset' parameter to read beyond line ${params.offset + content.length})`
+    if (lines.length > offset + content.length) {
+      output += `\n\n(File has more lines. Use 'offset' parameter to read beyond line ${offset + content.length})`
     }
     output += "\n</file>"
 
