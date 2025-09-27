@@ -35,7 +35,7 @@ function parseEditOutput(output: string): { summary: string; code: string } {
   if (!report && !codePart) {
     const extractedCode = extractCodeFromMarkdown(output)
     if (!extractedCode || extractedCode.trim() === "") {
-      throw new Error("No code found in model output")
+      throw new Error("No code found in model output: " + output)
     } else {
       return { summary: "Code modifications applied", code: extractedCode }
     }
