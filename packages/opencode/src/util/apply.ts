@@ -107,11 +107,17 @@ export async function handleDiagnosticsAndFileWrite(
     let contentOld: string
     try {
       contentOld = await readFile(absolutePath, "utf-8")
-    } catch (err) {
-      try {
-        await LSP.revertVirtualContent(absolutePath)
-      } catch {}
-      throw err
+    } catch (err: any) {
+      // If file doesn't exist, use empty string as old content
+      if (err?.code === "ENOENT") {
+        contentOld = ""
+      } else {
+        // For other errors, try to revert virtual content and re-throw
+        try {
+          await LSP.revertVirtualContent(absolutePath)
+        } catch {}
+        throw err
+      }
     }
     const rawDiff = createTwoFilesPatch(filePath, filePath, contentOld, contentNew)
     diff = trimDiff(rawDiff)
