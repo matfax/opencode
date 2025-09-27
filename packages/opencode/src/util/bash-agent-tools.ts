@@ -14,6 +14,8 @@ import { GlobTool } from "../tool/glob"
 // Import unified permission system
 import { BashPermissions } from "./bash-permissions"
 
+const DEFAULT_READ_LIMIT = 1000
+
 // Tool availability checker for bash-summary agent
 export const checkCommandAvailability = Tool.define("command-availability", {
   description: "Check availability of shell commands and tools",
@@ -96,17 +98,18 @@ export const BashAgentTools = {
     description: "Read file contents",
     parameters: z.object({
       filePath: z.string().describe("Path to file to read"),
-      offset: z.number().optional().describe("Line number to start from"),
-      limit: z.number().optional().describe("Number of lines to read"),
+      offset: z.number().optional().describe("Line number to start from").default(0),
+      limit: z.number().optional().describe("Number of lines to read").default(DEFAULT_READ_LIMIT),
     }),
     async execute(params: any, ctx: any) {
-      // Strip AI features from read tool
-      const readParams = {
+      // Strip AI features from read tool and parse params through ReadTool's schema to apply defaults
+      const readTool = await ReadTool.init()
+      const parsedParams = readTool.parameters.parse({
         ...params,
         autoSummarize: false, // Disable auto-summarization
         prompt: undefined, // No summary prompts
-      }
-      const result = await ReadTool.init().then((tool: any) => tool.execute(readParams, ctx))
+      })
+      const result = await readTool.execute(parsedParams, ctx)
       return result
     },
   }),
