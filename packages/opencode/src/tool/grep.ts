@@ -12,7 +12,7 @@ export const GrepTool = Tool.define("grep", {
   parameters: z.object({
     pattern: z.string().describe("The regex pattern to search for in file contents"),
     path: z.string().optional().describe("The directory to search in. Defaults to the current working directory."),
-    include: z.string().optional().describe('File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")'),
+    include: z.string().optional().describe('File pattern to include in the search (e.g. "*.txt", "*.{md,txt}")'),
   }),
   key: (p) => ["grep", p.path || ".", p.pattern].join("|"),
   expireAfter: (_p) => DEFAULT_EXPIRATION,

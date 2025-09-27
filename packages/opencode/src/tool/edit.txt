@@ -2,9 +2,12 @@ Facilitates N number of modifications to a single file using natural language in
 
 Usage:
 - This only supports content edits to a single file, no file operations (create, delete, rename, move)
+- When using this tool, act in a mid-level planner role, like a senior developer, outlining crucial steps, requirements and references
 - Provide editing instructions in natural language describing what changes to make
 - Optionally accepts a list of relevant files for context to understand how edits should integrate with the broader codebase
 - The file to be edited will always be read automatically and doesn't need to be explicitly provided
-- For simple changes, you can mention relevant integration references directly in the instructions to keep things concise
 - For complex changes, or when additions depend on imports from other files, provide the relevant file list for better context
-- When using this tool, act in a mid-level planner role, like a senior developer, outlining crucial steps, requirements and references
+- Be as specific and complete as possible in the instructions to avoid ambiguity
+- Rather than passing code, pass specific references to locations and symbols where changes should be made
+- Define requirements that the changes must satisfy
+- Ensure that all the upstream references to be included are available before requesting integration of said references
