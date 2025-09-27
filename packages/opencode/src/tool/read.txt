@@ -9,6 +9,9 @@ Features:
 Usage:
 - The filePath parameter must be an absolute path, not a relative path
 - By default, it reads up to 200 lines starting from the beginning of the file
+- If a file is the main subject of the conversation, prefer reading the file completely with a large limit
+- If the read is only supposed to answer a specific question, prefer using the auto-summarize feature to keep the context clean
+- If you have no knowledge of the precise file path, first use the grep or glob tool to search for files
 
 Usage for code files:
 - You can optionally specify a line offset and larger limit (especially handy for long files)
@@ -16,7 +19,7 @@ Usage for code files:
 Usage for documentation and large files:
 - Set autoSummarize=true to automatically summarize files that exceed the line limit (recommended for documentation and large files)
 - Use the prompt parameter with autoSummarize to focus the summary on specific aspects
-- Any lines longer than 200 characters will be truncated
+- Any lines longer than the `limit` will be truncated
 - Results are returned using cat -n format, with line numbers starting at 1
 - This tool cannot read binary files, including images
 - You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful. 
