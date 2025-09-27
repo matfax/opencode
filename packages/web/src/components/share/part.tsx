@@ -186,11 +186,6 @@ export function Part(props: PartProps) {
             <Spacer />
           </div>
         )}
-        {props.part.type === "tool" && props.part.state.status === "running" && props.message.role === "assistant" && (
-          <div data-component="tool" data-tool={props.part.tool}>
-            <RunningTool message={props.message} id={props.part.id} tool={props.part.tool} state={props.part.state} />
-          </div>
-        )}
         {props.part.type === "tool" &&
           props.part.state.status === "completed" &&
           props.message.role === "assistant" && (
@@ -307,61 +302,11 @@ type ToolProps = {
   isLastPart?: boolean
 }
 
-type RunningToolProps = {
-  id: MessageV2.ToolPart["id"]
-  tool: MessageV2.ToolPart["tool"]
-  state: MessageV2.ToolStateRunning
-  message: MessageV2.Assistant
-}
-
 interface Todo {
   id: string
   content: string
   status: "pending" | "in_progress" | "completed"
   priority: "low" | "medium" | "high"
-}
-
-function RunningTool(props: RunningToolProps) {
-  const getToolName = () => {
-    switch (props.tool) {
-      case "edit":
-        return "Edit"
-      case "bash":
-        return "Bash"
-      case "read":
-        return "Read"
-      case "write":
-        return "Write"
-      case "grep":
-        return "Grep"
-      case "list":
-        return "List"
-      case "glob":
-        return "Glob"
-      case "webfetch":
-        return "Web Fetch"
-      case "task":
-        return "Task"
-      default:
-        return props.tool
-    }
-  }
-
-  return (
-    <>
-      <div data-component="tool-title">
-        <span data-slot="name">{getToolName()}</span>
-        <Show when={props.state.title}>
-          <span data-slot="target">{props.state.title}</span>
-        </Show>
-      </div>
-      <Show when={props.state.metadata?.status}>
-        <div data-component="tool-result">
-          <ContentText expand text={props.state.metadata?.status} />
-        </div>
-      </Show>
-    </>
-  )
 }
 
 function stripWorkingDirectory(filePath?: string, workingDir?: string) {
@@ -629,9 +574,6 @@ export function EditTool(props: ToolProps) {
         </span>
       </div>
       <div data-component="tool-result">
-        <Show when={props.state.output && props.state.output !== "Edit applied successfully"}>
-          <ContentText expand text={props.state.output} />
-        </Show>
         <Switch>
           <Match when={props.state.metadata?.error}>
             <ContentError>{formatErrorString(props.state.metadata?.message || "")}</ContentError>
