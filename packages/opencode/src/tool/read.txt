@@ -1,35 +1,28 @@
 Reads a file from the local filesystem.
-Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid.
+Assume this tool is able to read all files on the machine. If the User provides a full path to a file (not just a file name) assume that path is valid.
 
 Features:
-- Can automatically summarize large files using AI when they exceed the line limit
-- Supports focused summarization based on specific prompts
+- Can automatically summarize large files when they exceed the line limit
 - Use on documentation, large code files, or any text files that need analysis
 - The garbage collector deduplicates multiple calls to the same file path within a single conversation to save context space
 
 Usage:
-- The filePath parameter must be an absolute path, not a relative path
+- The `filePath` parameter must be an absolute path, not a relative path
 - By default, it reads up to 200 lines starting from the beginning of the file
 - If a file is the main subject of the conversation, prefer reading the file completely with a large limit
-- If the read is only supposed to answer a specific question, prefer using the auto-summarize feature to keep the context clean
-- If you have no knowledge of the precise file path, first use the grep or glob tool to search for files
-- Due to the garbage collection mechanism, instead of iteratively reading different parts of a file, expand the existing offset and limit to cover the full section of interest
-
-Usage for code files:
-- You can optionally specify a line offset and larger limit (especially handy for long files)
-
-Usage for documentation and large files:
-- Set autoSummarize=true to automatically summarize files that exceed the line limit (recommended for documentation and large files)
-- Use the prompt parameter with autoSummarize to focus the summary on specific aspects
-- Any lines longer than the `limit` will be truncated
-- Results are returned using cat -n format, with line numbers starting at 1
-- This tool cannot read binary files, including images
+- If the read is only supposed to answer a specific question, prefer using the `query` feature to keep the context clean
 - If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents
+- This tool cannot read binary files, including images
+- Any lines longer than the `limit` will be truncated or summarized if the `query` parameter is set
+- Results are returned using cat -n format, with line numbers starting at 1
+- If you have no knowledge of the precise file path, first use the grep or glob tool to search for files
+- IMPORTANT: Due to the garbage collection mechanism, instead of iteratively reading different parts of a file, expand the existing offset and limit to until it covers the full section of interest
+- You MAY also move the offset and limit window IF you determine that a section you've read is not relevant
 
 Auto-summarization notes:
-- Only triggers when autoSummarize=true, no offset is specified, and file exceeds line limit
+- Only triggers when `query` parameter, no `offset` is specified, and file exceeds line limit
 - Summarization uses the full file content for better accuracy
 - Ideal for documentation, README files, large configuration files, and extensive code files
-- Summary includes file structure, key concepts, and important details
+- Describe what to focus on in the `query` parameter to guide the summary
 
 Prefer this tool for reading the main subject of the conversation, or files that are not code (e.g. configuration files, documentation, logs).

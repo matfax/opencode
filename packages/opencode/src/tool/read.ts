@@ -22,18 +22,17 @@ export const ReadTool = Tool.define("read", {
     filePath: z.string().describe("The path to the file to read"),
     limit: z.coerce.number().optional().default(DEFAULT_READ_LIMIT).describe("The number of lines to read"),
     offset: z.coerce.number().optional().default(0).describe("The line number to start reading from (0-based)"),
-    autoSummarize: z.boolean().optional().describe("Automatically summarize the file if it exceeds the line limit"),
-    prompt: z
+    query: z
       .string()
       .optional()
-      .describe("Optional instruction for what to focus on in the summary (only used with auto-summarize)"),
+      .describe("Query for the summary model (enables auto-summary)"),
   }),
   key: (p) => {
-    return ["read", "a" + (p.autoSummarize ? "1" : "0"), p.filePath].join("|")
+    return ["read", "a" + (p.query ? "1" : "0"), p.filePath].join("|")
   },
   enableRefresh: (p) => {
     const lim = p.limit ?? DEFAULT_READ_LIMIT
-    return lim <= DEFAULT_READ_LIMIT && !p.autoSummarize
+    return lim <= DEFAULT_READ_LIMIT && !p.query
   },
   async execute(params, ctx) {
     let filepath = params.filePath
@@ -75,7 +74,7 @@ export const ReadTool = Tool.define("read", {
     const lines = await file.text().then((text) => text.split("\n"))
 
     // Check if auto-summarize should trigger
-    const shouldAutoSummarize = !!params.autoSummarize && !params.offset && lines.length > limit
+    const shouldAutoSummarize = !!params.query && !params.offset && lines.length > limit
 
     if (shouldAutoSummarize) {
       // Get full file content for summarization
@@ -91,9 +90,7 @@ export const ReadTool = Tool.define("read", {
           })()
 
       // Generate summary using the support model
-      const userInstruction = params.prompt
-        ? `Please summarize the following file content with focus on: ${params.prompt}\n\nFile: ${path.relative(Instance.worktree, filepath)}\n\n'''${fullContent}'''`
-        : `Please summarize the following file content:\n\nFile: ${path.relative(Instance.worktree, filepath)}\n\n'''${fullContent}'''`
+      const userInstruction = `Please summarize the following file content with focus on: ${params.query}\n\nFile: ${path.relative(Instance.worktree, filepath)}\n\n'''${fullContent}'''`
 
       const summaryGen = await generateText({
         model: useModel.language,
