@@ -10,7 +10,7 @@ import type { PostSessionIdPermissionsPermissionIdData } from "./gen/types.gen.j
 // Type for the permissions helper
 interface SessionPermissions {
   respond<ThrowOnError extends boolean = false>(
-    options: Options<PostSessionIdPermissionsPermissionIdData, ThrowOnError>
+    options: Options<PostSessionIdPermissionsPermissionIdData, ThrowOnError>,
   ): ReturnType<GeneratedOpencodeClient["postSessionIdPermissionsPermissionId"]>
 }
 
@@ -28,11 +28,11 @@ export class OpencodeClient extends GeneratedOpencodeClient {
     this.session = Object.assign(originalSession, {
       permissions: {
         respond<ThrowOnError extends boolean = false>(
-          options: Options<PostSessionIdPermissionsPermissionIdData, ThrowOnError>
+          options: Options<PostSessionIdPermissionsPermissionIdData, ThrowOnError>,
         ) {
           return client.postSessionIdPermissionsPermissionId<ThrowOnError>(options)
-        }
-      }
+        },
+      },
     })
   }
 }

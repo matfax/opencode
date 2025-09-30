@@ -91,17 +91,11 @@ export const PermissionModal: Component<{
           when={!rejectType()}
           fallback={
             <div class="p-6">
-              <h2 class="text-lg font-semibold text-text mb-2">
-                {rejectTypeLabels[rejectType()!].title}
-              </h2>
-              <p class="text-sm text-text-muted mb-4">
-                {rejectTypeLabels[rejectType()!].description}
-              </p>
+              <h2 class="text-lg font-semibold text-text mb-2">{rejectTypeLabels[rejectType()!].title}</h2>
+              <p class="text-sm text-text-muted mb-4">{rejectTypeLabels[rejectType()!].description}</p>
 
               <div class="mb-4">
-                <label class="block text-sm font-medium text-text mb-2">
-                  Reason (optional)
-                </label>
+                <label class="block text-sm font-medium text-text mb-2">Reason (optional)</label>
                 <textarea
                   value={reason()}
                   onInput={(e) => setReason(e.currentTarget.value)}
@@ -115,18 +109,10 @@ export const PermissionModal: Component<{
               </div>
 
               <div class="flex justify-end gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => setRejectType(null)}
-                  disabled={submitting()}
-                >
+                <Button variant="ghost" onClick={() => setRejectType(null)} disabled={submitting()}>
                   Back
                 </Button>
-                <Button
-                  variant="primary"
-                  onClick={handleReject}
-                  disabled={submitting()}
-                >
+                <Button variant="primary" onClick={handleReject} disabled={submitting()}>
                   {submitting() ? "Submitting..." : "Submit Rejection"}
                 </Button>
               </div>
@@ -143,20 +129,10 @@ export const PermissionModal: Component<{
 
             <div class="space-y-3 mb-6">
               <div class="flex gap-2">
-                <Button
-                  variant="primary"
-                  onClick={() => handleApprove(false)}
-                  disabled={submitting()}
-                  class="flex-1"
-                >
+                <Button variant="primary" onClick={() => handleApprove(false)} disabled={submitting()} class="flex-1">
                   Approve Once
                 </Button>
-                <Button
-                  variant="primary"
-                  onClick={() => handleApprove(true)}
-                  disabled={submitting()}
-                  class="flex-1"
-                >
+                <Button variant="primary" onClick={() => handleApprove(true)} disabled={submitting()} class="flex-1">
                   Approve Always
                 </Button>
               </div>

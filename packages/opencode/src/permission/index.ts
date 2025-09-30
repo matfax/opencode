@@ -29,7 +29,10 @@ export namespace Permission {
       case "custom":
         return customReason || "The user rejected permission to use this specific tool call."
       default:
-        return customReason || "The user rejected permission to use this specific tool call. You may try again with different parameters."
+        return (
+          customReason ||
+          "The user rejected permission to use this specific tool call. You may try again with different parameters."
+        )
     }
   }
 
@@ -206,7 +209,10 @@ export namespace Permission {
       public readonly metadata?: Record<string, any>,
       public readonly reason?: string,
     ) {
-      super(reason || `The user rejected permission to use this specific tool call. You may try again with different parameters.`)
+      super(
+        reason ||
+          `The user rejected permission to use this specific tool call. You may try again with different parameters.`,
+      )
     }
   }
 }

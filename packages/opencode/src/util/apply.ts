@@ -153,7 +153,9 @@ export async function handleDiagnosticsAndFileWrite(
         sessionID: ctx.sessionID,
         messageID: ctx.messageID,
         callID: ctx.callID,
-        title: title ?? `${permissionType === "edit" ? "Edit" : "Write"} this file: ${absolutePath}${lspUnavailable ? " (LSP unavailable)" : ""}`,
+        title:
+          title ??
+          `${permissionType === "edit" ? "Edit" : "Write"} this file: ${absolutePath}${lspUnavailable ? " (LSP unavailable)" : ""}`,
         metadata: { filePath: absolutePath, diff, lspUnavailable },
         ...(lspUnavailable && { strict: true }),
       })
@@ -211,7 +213,10 @@ export async function applyEditOutput(
 
   let contentNew: string | undefined
   // Provider/model specific application
-  if (modelInfo.modelID.includes("morph") || (modelInfo.modelID.includes("relace") && modelInfo.providerID === "openrouter")) {
+  if (
+    modelInfo.modelID.includes("morph") ||
+    (modelInfo.modelID.includes("relace") && modelInfo.providerID === "openrouter")
+  ) {
     // Morph expects single user message with instruction/code/update tags
     const applyMsg = `<instruction>${summary || "Apply edit"}</instruction>\n<code>${contentOld}</code>\n<update>${editOutput}</update>`
     const gen = await generateText({
