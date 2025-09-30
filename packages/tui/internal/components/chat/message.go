@@ -503,19 +503,12 @@ func renderToolDetails(
 		text := base.Foreground(t.Text()).Bold(true).Render
 		muted := base.Foreground(t.TextMuted()).Render
 		permissionContent = "Permission required to run this tool:\n\n"
-		permissionContent += text(
-			"enter ",
-		) + muted(
-			"accept   ",
-		) + text(
-			"a",
-		) + muted(
-			" accept always   ",
-		) + text(
-			"esc",
-		) + muted(
-			" reject",
-		)
+		permissionContent += text("enter ") + muted("accept   ")
+		permissionContent += text("a") + muted(" accept always   ")
+		permissionContent += text("s") + muted(" reject syntax   ")
+		permissionContent += text("r") + muted(" reject approach   ")
+		permissionContent += text("i") + muted(" reject intent   ")
+		permissionContent += text("esc") + muted(" reject with message")
 
 	}
 

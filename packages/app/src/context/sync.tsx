@@ -1,4 +1,4 @@
-import type { Message, Agent, Provider, Session, Part, Config, Path, File, FileNode } from "@opencode-ai/sdk"
+import type { Message, Agent, Provider, Session, Part, Config, Path, File, FileNode, Permission } from "@opencode-ai/sdk"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useSDK } from "./sdk"
 import { createContext, Show, useContext, type ParentProps } from "solid-js"
@@ -20,6 +20,7 @@ function init() {
     }
     node: FileNode[]
     changes: File[]
+    permissions: Permission[]
   }>({
     config: {},
     path: { state: "", config: "", worktree: "", directory: "" },
@@ -31,6 +32,7 @@ function init() {
     part: {},
     node: [],
     changes: [],
+    permissions: [],
   })
 
   const sdk = useSDK()
@@ -88,6 +90,32 @@ function init() {
             event.properties.part.messageID,
             produce((draft) => {
               draft.splice(result.index, 0, event.properties.part)
+            }),
+          )
+          break
+        }
+        case "permission.updated": {
+          const result = Binary.search(store.permissions, event.properties.id, (p) => p.id)
+          if (result.found) {
+            setStore("permissions", result.index, reconcile(event.properties))
+            break
+          }
+          setStore(
+            "permissions",
+            produce((draft) => {
+              draft.splice(result.index, 0, event.properties)
+            }),
+          )
+          break
+        }
+        case "permission.replied": {
+          setStore(
+            "permissions",
+            produce((draft) => {
+              const index = draft.findIndex((p) => p.id === event.properties.permissionID)
+              if (index !== -1) {
+                draft.splice(index, 1)
+              }
             }),
           )
           break

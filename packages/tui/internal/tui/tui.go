@@ -38,6 +38,14 @@ type InterruptDebounceTimeoutMsg struct{}
 // ExitDebounceTimeoutMsg is sent when the exit key debounce timeout expires
 type ExitDebounceTimeoutMsg struct{}
 
+// PermissionAutoApproveTickMsg is sent each second during the countdown
+type PermissionAutoApproveTickMsg struct {
+	RemainingSeconds int
+}
+
+// PermissionAutoApproveTimeoutMsg is sent when the countdown reaches zero
+type PermissionAutoApproveTimeoutMsg struct{}
+
 // InterruptKeyState tracks the state of interrupt key presses for debouncing
 type InterruptKeyState int
 
@@ -56,27 +64,31 @@ const (
 
 const interruptDebounceTimeout = 1 * time.Second
 const exitDebounceTimeout = 1 * time.Second
+const permissionAutoApproveTimeout = 3 * time.Second
 
 type Model struct {
 	tea.Model
 	tea.CursorModel
-	width, height        int
-	app                  *app.App
-	modal                layout.Modal
-	status               status.StatusComponent
-	editor               chat.EditorComponent
-	messages             chat.MessagesComponent
-	completions          dialog.CompletionDialog
-	commandProvider      completions.CompletionProvider
-	fileProvider         completions.CompletionProvider
-	symbolsProvider      completions.CompletionProvider
-	agentsProvider       completions.CompletionProvider
-	showCompletionDialog bool
-	leaderBinding        *key.Binding
-	toastManager         *toast.ToastManager
-	interruptKeyState    InterruptKeyState
-	exitKeyState         ExitKeyState
-	messagesRight        bool
+	width, height          int
+	app                    *app.App
+	modal                  layout.Modal
+	status                 status.StatusComponent
+	editor                 chat.EditorComponent
+	messages               chat.MessagesComponent
+	completions            dialog.CompletionDialog
+	commandProvider        completions.CompletionProvider
+	fileProvider           completions.CompletionProvider
+	symbolsProvider        completions.CompletionProvider
+	agentsProvider         completions.CompletionProvider
+	showCompletionDialog   bool
+	leaderBinding          *key.Binding
+	toastManager           *toast.ToastManager
+	interruptKeyState      InterruptKeyState
+	exitKeyState           ExitKeyState
+	messagesRight                  bool
+	permissionRejectType           *string // "syntax", "approach", "intent", or "custom"
+	permissionRejectReason         string  // custom reason text for rejection
+	permissionAutoApproveRemaining int     // countdown seconds remaining (0 = not active)
 }
 
 func (a Model) Init() tea.Cmd {
@@ -105,7 +117,100 @@ func (a Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		keyString := msg.String()
 
 		if a.app.CurrentPermission.ID != "" {
-			if keyString == "enter" || keyString == "esc" || keyString == "a" {
+			// If we're entering a custom reason for rejection, handle text input
+			if a.permissionRejectType != nil {
+				if keyString == "esc" {
+					// Cancel reason entry, go back to permission prompt
+					a.permissionRejectType = nil
+					a.permissionRejectReason = ""
+					a.permissionAutoApproveRemaining = 0
+					return a, nil
+				}
+				if keyString == "enter" {
+					// Submit rejection with reason
+					sessionID := a.app.CurrentPermission.SessionID
+					permissionID := a.app.CurrentPermission.ID
+					rejectType := *a.permissionRejectType
+					reason := a.permissionRejectReason
+
+					a.editor.Focus()
+					a.app.Permissions = a.app.Permissions[1:]
+					if len(a.app.Permissions) > 0 {
+						a.app.CurrentPermission = a.app.Permissions[0]
+					} else {
+						a.app.CurrentPermission = opencode.Permission{}
+					}
+					a.permissionRejectType = nil
+					a.permissionRejectReason = ""
+					a.permissionAutoApproveRemaining = 0
+
+					return a, func() tea.Msg {
+						params := opencode.SessionPermissionRespondParams{
+							Response: opencode.F(opencode.SessionPermissionRespondParamsResponseReject),
+						}
+						if rejectType != "" {
+							params.RejectType = opencode.F(opencode.SessionPermissionRespondParamsRejectType(rejectType))
+						}
+						if reason != "" {
+							params.Reason = opencode.F(reason)
+						}
+
+						resp, err := a.app.Client.Session.Permissions.Respond(
+							context.Background(),
+							sessionID,
+							permissionID,
+							params,
+						)
+						if err != nil {
+							slog.Error("Failed to send permission response to server", "error", err)
+							return toast.NewErrorToast("Network error: Could not send permission response")()
+						}
+						slog.Debug("Permission response sent successfully", "response", resp)
+						return nil
+					}
+				}
+				if keyString == "backspace" {
+					if len(a.permissionRejectReason) > 0 {
+						a.permissionRejectReason = a.permissionRejectReason[:len(a.permissionRejectReason)-1]
+					}
+					// Cancel countdown when user types
+					a.permissionAutoApproveRemaining = 0
+					return a, nil
+				}
+				// Add character to reason
+				if len(msg.Text) == 1 {
+					a.permissionRejectReason += msg.Text
+					// Cancel countdown when user types
+					a.permissionAutoApproveRemaining = 0
+				}
+				return a, nil
+			}
+
+			// Handle permission response keys (not in rejection reason mode)
+			if keyString == "enter" || keyString == "a" || keyString == "s" || keyString == "r" || keyString == "i" || keyString == "esc" {
+				// For rejection types s/p/i/c, enter reason mode instead of immediately responding
+				if keyString == "s" || keyString == "r" || keyString == "i" || keyString == "esc" {
+					rejectTypeMap := map[string]string{
+						"s":   "syntax",
+						"r":   "approach",
+						"i":   "intent",
+						"esc": "custom",
+					}
+					rejectType := rejectTypeMap[keyString]
+					a.permissionRejectType = &rejectType
+					a.permissionRejectReason = ""
+
+					// Start countdown timer only for non-custom types
+					if rejectType != "custom" {
+						a.permissionAutoApproveRemaining = 3
+						return a, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+							return PermissionAutoApproveTickMsg{RemainingSeconds: 3}
+						})
+					}
+					return a, nil
+				}
+
+				// Handle accept responses (enter = once, a = always)
 				sessionID := a.app.CurrentPermission.SessionID
 				permissionID := a.app.CurrentPermission.ID
 				a.editor.Focus()
@@ -115,14 +220,10 @@ func (a Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					a.app.CurrentPermission = opencode.Permission{}
 				}
+
 				response := opencode.SessionPermissionRespondParamsResponseOnce
-				switch keyString {
-				case "enter":
-					response = opencode.SessionPermissionRespondParamsResponseOnce
-				case "a":
+				if keyString == "a" {
 					response = opencode.SessionPermissionRespondParamsResponseAlways
-				case "esc":
-					response = opencode.SessionPermissionRespondParamsResponseReject
 				}
 
 				return a, func() tea.Msg {
@@ -133,10 +234,10 @@ func (a Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						opencode.SessionPermissionRespondParams{Response: opencode.F(response)},
 					)
 					if err != nil {
-						slog.Error("Failed to respond to permission request", "error", err)
-						return toast.NewErrorToast("Failed to respond to permission request")()
+						slog.Error("Failed to send permission response to server", "error", err)
+						return toast.NewErrorToast("Network error: Could not send permission response")()
 					}
-					slog.Debug("Responded to permission request", "response", resp)
+					slog.Debug("Permission response sent successfully", "response", resp)
 					return nil
 				}
 			}
@@ -759,6 +860,67 @@ func (a Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Reset exit key state after timeout
 		a.exitKeyState = ExitKeyIdle
 		a.editor.SetExitKeyInDebounce(false)
+	case PermissionAutoApproveTickMsg:
+		// Handle countdown tick for auto-approval
+		if a.permissionAutoApproveRemaining > 0 {
+			newRemaining := msg.RemainingSeconds - 1
+			a.permissionAutoApproveRemaining = newRemaining
+			if newRemaining > 0 {
+				// Continue countdown
+				return a, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+					return PermissionAutoApproveTickMsg{RemainingSeconds: newRemaining}
+				})
+			} else {
+				// Countdown reached zero, trigger auto-proceed
+				return a, func() tea.Msg {
+					return PermissionAutoApproveTimeoutMsg{}
+				}
+			}
+		}
+	case PermissionAutoApproveTimeoutMsg:
+		// Auto-proceed with the rejection choice (s/r/i) without waiting for enter
+		if a.permissionRejectType != nil && *a.permissionRejectType != "custom" {
+			sessionID := a.app.CurrentPermission.SessionID
+			permissionID := a.app.CurrentPermission.ID
+			rejectType := *a.permissionRejectType
+			reason := a.permissionRejectReason
+
+			a.editor.Focus()
+			a.app.Permissions = a.app.Permissions[1:]
+			if len(a.app.Permissions) > 0 {
+				a.app.CurrentPermission = a.app.Permissions[0]
+			} else {
+				a.app.CurrentPermission = opencode.Permission{}
+			}
+			a.permissionRejectType = nil
+			a.permissionRejectReason = ""
+			a.permissionAutoApproveRemaining = 0
+
+			return a, func() tea.Msg {
+				params := opencode.SessionPermissionRespondParams{
+					Response: opencode.F(opencode.SessionPermissionRespondParamsResponseReject),
+				}
+				if rejectType != "" {
+					params.RejectType = opencode.F(opencode.SessionPermissionRespondParamsRejectType(rejectType))
+				}
+				if reason != "" {
+					params.Reason = opencode.F(reason)
+				}
+
+				resp, err := a.app.Client.Session.Permissions.Respond(
+					context.Background(),
+					sessionID,
+					permissionID,
+					params,
+				)
+				if err != nil {
+					slog.Error("Failed to send permission response to server", "error", err)
+					return toast.NewErrorToast("Network error: Could not send permission response")()
+				}
+				slog.Debug("Permission response sent successfully", "response", resp)
+				return nil
+			}
+		}
 	case tea.PasteMsg, tea.ClipboardMsg:
 		// Paste events: prioritize modal if active, otherwise editor
 		if a.modal != nil {
@@ -931,6 +1093,58 @@ func (a Model) View() (string, *tea.Cursor) {
 	if a.modal != nil {
 		mainLayout = a.modal.Render(mainLayout)
 	}
+
+	// Render rejection reason input overlay if active
+	if a.permissionRejectType != nil {
+		rejectTypeLabel := map[string]string{
+			"syntax":   "Syntax Error",
+			"approach": "Wrong Approach",
+			"intent":   "Wrong Intent",
+			"custom":   "Custom Reason",
+		}
+		label := rejectTypeLabel[*a.permissionRejectType]
+
+		// Build the modal content
+		content := label + "\n\n" +
+			styles.NewStyle().Foreground(t.TextMuted()).Render("Enter rejection reason (optional):") + "\n" +
+			styles.NewStyle().Foreground(t.Text()).Bold(true).Render(a.permissionRejectReason+"_") + "\n\n"
+
+		// Add countdown display if active (not for custom type)
+		if a.permissionAutoApproveRemaining > 0 {
+			countdownText := fmt.Sprintf("Auto-proceeding in %d second", a.permissionAutoApproveRemaining)
+			if a.permissionAutoApproveRemaining != 1 {
+				countdownText += "s"
+			}
+			countdownText += "... (type to cancel)"
+			content += styles.NewStyle().Foreground(t.Accent()).Render(countdownText) + "\n\n"
+		}
+
+		content += styles.NewStyle().Foreground(t.TextMuted()).Render("enter") + " " + styles.NewStyle().Foreground(t.Text()).Render("submit") + "   " +
+			styles.NewStyle().Foreground(t.TextMuted()).Render("esc") + " " + styles.NewStyle().Foreground(t.Text()).Render("cancel")
+
+		reasonModal := styles.NewStyle().
+			Background(t.BackgroundElement()).
+			Foreground(t.Text()).
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(t.Warning()).
+			Padding(1, 2).
+			Width(60).
+			Render(content)
+
+		// Create backdrop and overlay the modal
+		backdrop := styles.NewStyle().
+			Width(a.width).
+			Height(a.height).
+			Render("")
+
+		mainLayout = layout.PlaceOverlay(
+			(a.width-lipgloss.Width(reasonModal))/2,
+			(a.height-lipgloss.Height(reasonModal))/2,
+			reasonModal,
+			backdrop,
+		)
+	}
+
 	mainLayout = a.toastManager.RenderOverlay(mainLayout)
 
 	if theme.CurrentThemeUsesAnsiColors() {

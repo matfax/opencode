@@ -858,12 +858,26 @@ export namespace Server {
             permissionID: z.string(),
           }),
         ),
-        validator("json", z.object({ response: Permission.Response })),
+        validator(
+          "json",
+          z.object({
+            response: Permission.Response,
+            reason: z.string().optional(),
+            rejectType: Permission.RejectReason.optional(),
+          }),
+        ),
         async (c) => {
           const params = c.req.valid("param")
           const id = params.id
           const permissionID = params.permissionID
-          Permission.respond({ sessionID: id, permissionID, response: c.req.valid("json").response })
+          const body = c.req.valid("json")
+          Permission.respond({
+            sessionID: id,
+            permissionID,
+            response: body.response,
+            reason: body.reason,
+            rejectType: body.rejectType,
+          })
           return c.json(true)
         },
       )

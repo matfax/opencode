@@ -414,6 +414,7 @@ export type Config = {
             output: number
           }
           experimental?: boolean
+          endpoint?: string
           options?: {
             [key: string]: unknown
           }
@@ -717,6 +718,9 @@ export type FilePart = {
 
 export type ToolStatePending = {
   status: "pending"
+  metadata?: {
+    [key: string]: unknown
+  }
 }
 
 export type ToolStateRunning = {
@@ -899,6 +903,7 @@ export type Model = {
     output: number
   }
   experimental?: boolean
+  endpoint?: string
   options: {
     [key: string]: unknown
   }
@@ -984,7 +989,8 @@ export type Agent = {
     [key: string]: boolean
   }
   options: {
-    [key: string]: unknown
+    buffer?: number
+    [key: string]: unknown | number | undefined
   }
 }
 
@@ -1764,6 +1770,8 @@ export type SessionUnrevertResponse = SessionUnrevertResponses[keyof SessionUnre
 export type PostSessionIdPermissionsPermissionIdData = {
   body?: {
     response: "once" | "always" | "reject"
+    reason?: string
+    rejectType?: "syntax" | "approach" | "intent" | "custom"
   }
   path: {
     id: string

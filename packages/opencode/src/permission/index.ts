@@ -18,6 +18,21 @@ export namespace Permission {
     return keys.every((k) => pats.some((p) => Wildcard.match(k, p)))
   }
 
+  function buildRejectMessage(rejectType?: RejectReason, customReason?: string): string {
+    switch (rejectType) {
+      case "syntax":
+        return `The user rejected this due to a syntax error. ${customReason || "Please fix the syntax and try again."}`
+      case "approach":
+        return `The user rejected this approach. ${customReason || "The user agrees with the intent but wants a different implementation approach. Do not retry the same approach."}`
+      case "intent":
+        return `The user rejected this intent. ${customReason || "Do not pursue this direction or similar approaches. The user does not want this functionality."}`
+      case "custom":
+        return customReason || "The user rejected permission to use this specific tool call."
+      default:
+        return customReason || "The user rejected permission to use this specific tool call. You may try again with different parameters."
+    }
+  }
+
   export const Info = z
     .object({
       id: z.string(),
@@ -85,6 +100,7 @@ export namespace Permission {
     sessionID: Info["sessionID"]
     messageID: Info["messageID"]
     metadata: Info["metadata"]
+    strict?: boolean
   }) {
     const { pending, approved } = state()
     log.info("asking", {
@@ -92,10 +108,12 @@ export namespace Permission {
       messageID: input.messageID,
       toolCallID: input.callID,
       pattern: input.pattern,
+      strict: input.strict,
     })
     const approvedForSession = approved[input.sessionID] || {}
     const keys = toKeys(input.pattern, input.type)
-    if (covered(keys, approvedForSession)) return
+    // If strict mode is enabled, skip the "always" approval check
+    if (!input.strict && covered(keys, approvedForSession)) return
     const info: Info = {
       id: Identifier.ascending("permission"),
       type: input.type,
@@ -135,14 +153,26 @@ export namespace Permission {
   export const Response = z.enum(["once", "always", "reject"])
   export type Response = z.infer<typeof Response>
 
-  export function respond(input: { sessionID: Info["sessionID"]; permissionID: Info["id"]; response: Response }) {
+  export const RejectReason = z.enum(["syntax", "approach", "intent", "custom"])
+  export type RejectReason = z.infer<typeof RejectReason>
+
+  export function respond(input: {
+    sessionID: Info["sessionID"]
+    permissionID: Info["id"]
+    response: Response
+    reason?: string
+    rejectType?: RejectReason
+  }) {
     log.info("response", input)
     const { pending, approved } = state()
     const match = pending[input.sessionID]?.[input.permissionID]
     if (!match) return
     delete pending[input.sessionID][input.permissionID]
     if (input.response === "reject") {
-      match.reject(new RejectedError(input.sessionID, input.permissionID, match.info.callID, match.info.metadata))
+      const rejectMessage = buildRejectMessage(input.rejectType, input.reason)
+      match.reject(
+        new RejectedError(input.sessionID, input.permissionID, match.info.callID, match.info.metadata, rejectMessage),
+      )
       return
     }
     match.resolve()
@@ -174,8 +204,9 @@ export namespace Permission {
       public readonly permissionID: string,
       public readonly toolCallID?: string,
       public readonly metadata?: Record<string, any>,
+      public readonly reason?: string,
     ) {
-      super(`The user rejected permission to use this specific tool call. You may try again with different parameters.`)
+      super(reason || `The user rejected permission to use this specific tool call. You may try again with different parameters.`)
     }
   }
 }

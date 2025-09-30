@@ -2,8 +2,9 @@ import { FileIcon, Icon, IconButton, Tooltip } from "@/ui"
 import { Tabs } from "@/ui/tabs"
 import FileTree from "@/components/file-tree"
 import { createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
-import { useLocal, useSDK } from "@/context"
+import { useLocal, useSDK, useSync } from "@/context"
 import { Code } from "@/components/code"
+import { PermissionModal } from "@/components/permission-modal"
 import {
   DragDropProvider,
   DragDropSensors,
@@ -21,6 +22,7 @@ import SessionTimeline from "@/components/session-timeline"
 export default function Page() {
   const sdk = useSDK()
   const local = useLocal()
+  const sync = useSync()
   const [clickTimer, setClickTimer] = createSignal<number | undefined>()
   const [activeItem, setActiveItem] = createSignal<string | undefined>(undefined)
   const [inputValue, setInputValue] = createSignal("")
@@ -501,6 +503,14 @@ export default function Page() {
           </div>
         </form>
       </div>
+      <Show when={sync.data.permissions.length > 0}>
+        <PermissionModal
+          permission={sync.data.permissions[0]}
+          onClose={() => {
+            // Permission will be removed from store when permission.replied event is received
+          }}
+        />
+      </Show>
     </div>
   )
 }

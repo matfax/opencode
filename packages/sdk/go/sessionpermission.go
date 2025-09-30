@@ -135,8 +135,10 @@ type PermissionPatternArray []string
 func (r PermissionPatternArray) ImplementsPermissionPatternUnion() {}
 
 type SessionPermissionRespondParams struct {
-	Response  param.Field[SessionPermissionRespondParamsResponse] `json:"response,required"`
-	Directory param.Field[string]                                 `query:"directory"`
+	Response   param.Field[SessionPermissionRespondParamsResponse]   `json:"response,required"`
+	Reason     param.Field[string]                                   `json:"reason"`
+	RejectType param.Field[SessionPermissionRespondParamsRejectType] `json:"rejectType"`
+	Directory  param.Field[string]                                   `query:"directory"`
 }
 
 func (r SessionPermissionRespondParams) MarshalJSON() (data []byte, err error) {
@@ -163,6 +165,23 @@ const (
 func (r SessionPermissionRespondParamsResponse) IsKnown() bool {
 	switch r {
 	case SessionPermissionRespondParamsResponseOnce, SessionPermissionRespondParamsResponseAlways, SessionPermissionRespondParamsResponseReject:
+		return true
+	}
+	return false
+}
+
+type SessionPermissionRespondParamsRejectType string
+
+const (
+	SessionPermissionRespondParamsRejectTypeSyntax   SessionPermissionRespondParamsRejectType = "syntax"
+	SessionPermissionRespondParamsRejectTypeApproach SessionPermissionRespondParamsRejectType = "approach"
+	SessionPermissionRespondParamsRejectTypeIntent   SessionPermissionRespondParamsRejectType = "intent"
+	SessionPermissionRespondParamsRejectTypeCustom   SessionPermissionRespondParamsRejectType = "custom"
+)
+
+func (r SessionPermissionRespondParamsRejectType) IsKnown() bool {
+	switch r {
+	case SessionPermissionRespondParamsRejectTypeSyntax, SessionPermissionRespondParamsRejectTypeApproach, SessionPermissionRespondParamsRejectTypeIntent, SessionPermissionRespondParamsRejectTypeCustom:
 		return true
 	}
 	return false
