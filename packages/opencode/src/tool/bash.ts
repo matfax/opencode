@@ -4,6 +4,7 @@ import { exec } from "child_process"
 import { Tool } from "./tool"
 import DESCRIPTION from "./bash.txt"
 // @ts-ignore
+import BASH_CONSTRUCT_TEMPLATE from "./support/bash.txt"
 import BASH_OUTPUT_SUMMARY_TEMPLATE from "./support/bash-output-summary.txt"
 import { Instance } from "../project/instance"
 import { generateText } from "ai"
@@ -46,8 +47,16 @@ async function handleAgenticMode(params: any, ctx: any) {
   const steps: Step[] = []
 
   while (i < maxIter) {
-    const supportParams = await buildSupportModelParams("bash", ctx.agent, ctx.sessionID)
-    const gen = await generateText({ ...supportParams, maxRetries: 3, messages: convo })
+    const { params: supportParams, prompt } = await buildSupportModelParams("bash", ctx.agent, ctx.sessionID)
+    const systemPrompt = prompt ?? BASH_CONSTRUCT_TEMPLATE
+    const gen = await generateText({
+      ...supportParams,
+      maxRetries: 3,
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...convo
+      ]
+    })
     const assistant = gen.text.trim()
     const done = assistant.toLowerCase().includes("done") || assistant.toLowerCase().includes("complete")
     if (done) break
@@ -97,12 +106,13 @@ async function handleAgenticMode(params: any, ctx: any) {
         ? `Summarize the following multi-step agentic bash session. Include the intent, key commands, notable outputs, and overall status.\n\nIntent: ${params.description}\n\nTranscript:\n'''${extended}'''`
         : `Summarize the following multi-step agentic bash session. Include key commands, notable outputs, and overall status.\n\nTranscript:\n'''${extended}'''`
 
-      const supportParams = await buildSupportModelParams("bash-summary", ctx.agent, ctx.sessionID)
+      const { params: supportParams, prompt } = await buildSupportModelParams("bash-summary", ctx.agent, ctx.sessionID)
+      const systemPrompt = prompt ?? BASH_OUTPUT_SUMMARY_TEMPLATE
       const sum = await generateText({
         ...supportParams,
         maxRetries: 3,
         messages: [
-          { role: "system", content: BASH_OUTPUT_SUMMARY_TEMPLATE },
+          { role: "system", content: systemPrompt },
           { role: "user", content: instr },
         ],
       })
@@ -212,12 +222,13 @@ export const BashTool = Tool.define("bash", {
           ? `Please summarize the following command output that had the original intent: ${params.description}\n\nCommand: ${cmd}\nOutput:\n'''${out}'''`
           : `Please summarize the following command output:\n\nCommand: ${cmd}\nOutput:\n'''${out}'''`
 
-        const supportParams = await buildSupportModelParams("bash-summary", ctx.agent, ctx.sessionID)
+        const { params: supportParams, prompt } = await buildSupportModelParams("bash-summary", ctx.agent, ctx.sessionID)
+        const systemPrompt = prompt ?? BASH_OUTPUT_SUMMARY_TEMPLATE
         const sum = await generateText({
           ...supportParams,
           maxRetries: 3,
           messages: [
-            { role: "system", content: BASH_OUTPUT_SUMMARY_TEMPLATE },
+            { role: "system", content: systemPrompt },
             { role: "user", content: instr },
           ],
         })
