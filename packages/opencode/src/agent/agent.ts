@@ -27,6 +27,12 @@ export namespace Agent {
           providerID: z.string(),
         })
         .optional(),
+      modelConfig: z
+        .object({
+          default: z.string(),
+          overrides: z.record(z.string(), z.string()),
+        })
+        .optional(),
       prompt: z.string().optional(),
       tools: z.record(z.string(), z.boolean()),
       // support agent-specific options (e.g., compaction buffer)
@@ -186,7 +192,15 @@ export namespace Agent {
         ...item.options,
         ...extra,
       }
-      if (model) item.model = Provider.parseModel(model)
+      if (model) {
+        if (typeof model === "string") {
+          item.model = Provider.parseModel(model)
+        } else {
+          // Store the raw config for glob matching, use default as fallback model
+          item.modelConfig = model
+          item.model = Provider.parseModel(model.default)
+        }
+      }
       if (prompt) item.prompt = prompt
       if (tools)
         item.tools = {

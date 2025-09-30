@@ -149,7 +149,7 @@ export const EditTool = Tool.define("edit", {
       // Build system messages for this format
       currentFormat = attempt <= 2 ? currentFormat : Template.Format.Diff
       const example = currentFormat === Template.Format.Snippet ? SNIPPET_EXAMPLE : DIFF_EXAMPLE
-      const { params: supportParams, prompt } = await buildSupportModelParams("edit", ctx.agent, ctx.sessionID)
+      const { params: supportParams, prompt } = await buildSupportModelParams("edit", ctx.agent, ctx.sessionID, filePath)
       const baseTemplate = prompt ?? EDIT_TEMPLATE
       const substituted = await Template.substituteInputs(await Template.substitute(baseTemplate), {
         format: currentFormat,

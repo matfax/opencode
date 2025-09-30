@@ -252,7 +252,15 @@ export namespace Config {
 
   export const Agent = z
     .object({
-      model: z.string().optional(),
+      model: z
+        .union([
+          z.string(),
+          z.object({
+            default: z.string(),
+            overrides: z.record(z.string(), z.string()),
+          }),
+        ])
+        .optional(),
       temperature: z.number().optional(),
       top_p: z.number().optional(),
       prompt: z.string().optional(),

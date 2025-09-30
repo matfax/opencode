@@ -83,10 +83,22 @@ export const MultiEditTool = Tool.define("multiedit", {
     const hasApplyModelForFormat = !!applyAgentForFormat?.model
     const format = hasApplyModelForFormat ? Template.Format.Snippet : Template.Format.Diff
 
+    // Use first relevant file as representative for model selection (if available)
+    const representativeFile = params.relevantFiles?.[0]
+      ? path.isAbsolute(params.relevantFiles[0])
+        ? params.relevantFiles[0]
+        : path.join(Instance.directory, params.relevantFiles[0])
+      : undefined
+
     // System template reuse from single edit tool support examples
     // We keep it simple: instruct model to output angle sentinel sections
     const example = format === Template.Format.Snippet ? MULTISNIPPET_EXAMPLE : MULTIDIFF_EXAMPLE
-    const { params: supportParams, prompt } = await buildSupportModelParams("edit", ctx.agent, ctx.sessionID)
+    const { params: supportParams, prompt } = await buildSupportModelParams(
+      "edit",
+      ctx.agent,
+      ctx.sessionID,
+      representativeFile,
+    )
     const baseTemplate = prompt ?? MULTIEDIT_TEMPLATE
     const substituted = await Template.substituteInputs(await Template.substitute(baseTemplate), {
       format: format,

@@ -198,8 +198,13 @@ export async function applyEditOutput(
   filePath: string,
   contentOld: string,
 ) {
-  // Get model and options using 3-tier fallback via helper
-  const { params: supportParams, modelInfo: modelInfo, prompt } = await buildSupportModelParams("apply", ctx.agent, ctx.sessionID)
+  // Get model and options using 4-tier fallback (with glob matching) via helper
+  const { params: supportParams, modelInfo: modelInfo, prompt } = await buildSupportModelParams(
+    "apply",
+    ctx.agent,
+    ctx.sessionID,
+    filePath,
+  )
 
   let contentNew: string | undefined
 
