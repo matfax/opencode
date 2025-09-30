@@ -206,7 +206,7 @@ export async function applyEditOutput(
 
   let contentNew: string | undefined
   // Provider/model specific application
-  if (modelInfo.modelID.includes("morph")) {
+  if (modelInfo.modelID.includes("morph") || (modelInfo.modelID.includes("relace") && modelInfo.providerID === "openrouter")) {
     // Morph expects single user message with instruction/code/update tags
     const applyMsg = `<instruction>${summary || "Apply edit"}</instruction>\n<code>${contentOld}</code>\n<update>${editOutput}</update>`
     const gen = await generateText({

@@ -380,7 +380,7 @@ export namespace Provider {
         models: {},
       }
     }
-    database["relace"].models["relace-apply"] = {
+    database["relace"].models["relace-apply-v3"] = {
       id: "relace-apply",
       name: "Relace Apply Model",
       release_date: "2025-01-01",
@@ -417,7 +417,6 @@ export namespace Provider {
       )
       provider.info.models = filteredModels
 
-      // Ensure openrouter morph-v3-large model is available if user has openrouter provider
       if (providerID === "openrouter" && !provider.info.models["morph/morph-v3-large"]) {
         provider.info.models["morph/morph-v3-large"] = {
           id: "morph/morph-v3-large",
@@ -433,7 +432,6 @@ export namespace Provider {
         }
       }
 
-      // Ensure openrouter morph-v3-fast model is available if user has openrouter provider
       if (providerID === "openrouter" && !provider.info.models["morph/morph-v3-fast"]) {
         provider.info.models["morph/morph-v3-fast"] = {
           id: "morph/morph-v3-fast",
@@ -445,6 +443,21 @@ export namespace Provider {
           tool_call: false,
           cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 },
           limit: { context: 81920, output: 38000 },
+          options: { format: "xml" },
+        }
+      }
+
+      if (providerID === "openrouter" && !provider.info.models["relace/relace-apply-3"]) {
+        provider.info.models["relace/relace-apply-3"] = {
+          id: "relace/relace-apply-3",
+          name: "Relace Apply (via OpenRouter)",
+          release_date: "2025-09-26",
+          attachment: false,
+          reasoning: false,
+          temperature: false,
+          tool_call: false,
+          cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 },
+          limit: { context: 256000, output: 128000 },
           options: { format: "xml" },
         }
       }
