@@ -4,35 +4,36 @@ export { type Config as OpencodeClientConfig }
 import { createClient } from "./gen/client/client.gen.js"
 import { type Config } from "./gen/client/types.gen.js"
 import { OpencodeClient as GeneratedOpencodeClient } from "./gen/sdk.gen.js"
-import type { PostSessionIdPermissionsPermissionIdData, PostSessionIdPermissionsPermissionIdResponses } from "./gen/types.gen.js"
+import type { Options } from "./gen/sdk.gen.js"
+import type { PostSessionIdPermissionsPermissionIdData } from "./gen/types.gen.js"
 
-class SessionPermissions {
-  constructor(private client: GeneratedOpencodeClient) {}
-
+// Type for the permissions helper
+interface SessionPermissions {
   respond<ThrowOnError extends boolean = false>(
-    options: Omit<PostSessionIdPermissionsPermissionIdData, "url">
-  ) {
-    return this.client.postSessionIdPermissionsPermissionId<ThrowOnError>({
-      ...options,
-      url: "/session/{id}/permissions/{permissionID}",
-    })
-  }
+    options: Options<PostSessionIdPermissionsPermissionIdData, ThrowOnError>
+  ): ReturnType<GeneratedOpencodeClient["postSessionIdPermissionsPermissionId"]>
 }
 
 export class OpencodeClient extends GeneratedOpencodeClient {
-  private _sessionPermissions: SessionPermissions
+  declare session: GeneratedOpencodeClient["session"] & {
+    permissions: SessionPermissions
+  }
 
   constructor(args?: { client?: ReturnType<typeof createClient> }) {
     super(args)
-    this._sessionPermissions = new SessionPermissions(this)
-  }
 
-  get session() {
-    const baseSession = super.session
-    return {
-      ...baseSession,
-      permissions: this._sessionPermissions,
-    }
+    // Extend session object with permissions helper
+    const originalSession = this.session
+    const client = this
+    this.session = Object.assign(originalSession, {
+      permissions: {
+        respond<ThrowOnError extends boolean = false>(
+          options: Options<PostSessionIdPermissionsPermissionIdData, ThrowOnError>
+        ) {
+          return client.postSessionIdPermissionsPermissionId<ThrowOnError>(options)
+        }
+      }
+    })
   }
 }
 
