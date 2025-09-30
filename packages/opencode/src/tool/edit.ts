@@ -24,6 +24,7 @@ import { generateText } from "ai"
 import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite } from "../util/apply"
 import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../util/extract"
 import { LSP } from "../lsp"
+import { Permission } from "../permission"
 // Re-export replace for existing tests that import from this module
 export { replace } from "../util/apply"
 
@@ -243,26 +244,36 @@ export const EditTool = Tool.define("edit", {
         continue
       }
 
-      // This may throw a syntax-related exception; if so, retry.
-      const { diagnostics, absolutePath } = await handleDiagnosticsAndFileWrite(filePath, contentNew, {
-        ctx,
-        diff,
-        type: "edit",
-      })
+      // This may throw a syntax-related exception or user rejection; if so, retry.
+      try {
+        const { diagnostics, absolutePath } = await handleDiagnosticsAndFileWrite(filePath, contentNew, {
+          ctx,
+          diff,
+          type: "edit",
+        })
 
-      // Only block write if there are diagnostics for the target file
-      if (diagnostics[absolutePath] && diagnostics[absolutePath].length > 0) {
-        if (attempt >= MAX_RETRIES) {
-          throw new Error(
-            `Changes not applied due to persistent diagnostic errors:\n${Object.values(diagnostics).flat().map(LSP.Diagnostic.pretty).join("\n")}`,
-          )
+        // Only block write if there are diagnostics for the target file
+        if (diagnostics[absolutePath] && diagnostics[absolutePath].length > 0) {
+          if (attempt >= MAX_RETRIES) {
+            throw new Error(
+              `Changes not applied due to persistent diagnostic errors:\n${Object.values(diagnostics).flat().map(LSP.Diagnostic.pretty).join("\n")}`,
+            )
+          }
+          lastError = `Changes would introduce diagnostic errors:\n${Object.values(diagnostics).flat().map(LSP.Diagnostic.pretty).join("\n")}`
+        } else {
+          // Successful edit
+          summary = output || "Edit applied successfully"
+          lastError = ""
+          break
         }
-        lastError = `Changes would introduce diagnostic errors:\n${Object.values(diagnostics).flat().map(LSP.Diagnostic.pretty).join("\n")}`
-      } else {
-        // Success!
-        summary = output || "Edit applied successfully"
-        lastError = ""
-        break
+      } catch (err) {
+        if (attempt >= MAX_RETRIES) {
+          throw err
+        } else if (err instanceof Permission.RejectedSyntaxError || err instanceof Permission.RejectedApproachError) {
+          lastError = err.message
+        } else {
+          throw err
+        }
       }
     }
 
