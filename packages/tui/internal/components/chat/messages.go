@@ -598,6 +598,7 @@ func (m *messagesComponent) renderView() tea.Cmd {
 								m.showToolDetails,
 								width,
 								permission.ID,
+								part.State,
 							)
 							content, cached = m.cache.Get(key)
 							if !cached {

@@ -222,6 +222,7 @@ export namespace SessionPrompt {
           sessionID: input.sessionID,
           model: model.info,
           providerID: model.providerID,
+          agent,
         }),
         (messages) => insertReminders({ messages, agent }),
       )
@@ -345,7 +346,7 @@ export namespace SessionPrompt {
     }
   }
 
-  async function getMessages(input: { sessionID: string; model: ModelsDev.Model; providerID: string }) {
+  async function getMessages(input: { sessionID: string; model: ModelsDev.Model; providerID: string, agent: Agent.Info }) {
     let msgs = await Session.messages(input.sessionID).then(MessageV2.filterSummarized)
     const lastAssistant = msgs.findLast((msg) => msg.info.role === "assistant")
     if (
@@ -359,6 +360,7 @@ export namespace SessionPrompt {
         sessionID: input.sessionID,
         providerID: input.providerID,
         modelID: input.model.id,
+        agent: input.agent,
       })
       const resumeMsgID = Identifier.ascending("message")
       const resumeMsg = {

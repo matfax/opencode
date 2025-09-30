@@ -4,8 +4,6 @@ import { Bus } from "../bus"
 import { File } from "../file"
 import { FileTime } from "../file/time"
 import { Agent } from "../agent/agent"
-import { Provider } from "../provider/provider"
-import { Template } from "./template"
 import { generateText } from "ai"
 import * as path from "path"
 import { Instance } from "../project/instance"
@@ -13,6 +11,7 @@ import { createTwoFilesPatch } from "diff"
 import { Permission } from "../permission"
 import { extractCodeFromMarkdown } from "./extract"
 import { readFile } from "fs/promises"
+import { buildSupportModelParams } from "../session/support-model-params"
 import type { LSPClient } from "../lsp/client"
 import type { Tool } from "../tool/tool"
 
@@ -199,63 +198,27 @@ export async function applyEditOutput(
   filePath: string,
   contentOld: string,
 ) {
-  const agent = await Agent.get(ctx.agent)
-  const applyAgent = await Agent.get("apply")
-  // Silent fallback if no apply agent or model
-  const modelInfo = applyAgent?.model
-    ? await Provider.getModel(applyAgent.model.providerID, applyAgent.model.modelID)
-    : agent.model
-      ? await Provider.getModel(agent.model?.providerID, agent.model.modelID)
-      : await (async () => {
-          const def = await Provider.defaultModel()
-          return Provider.getModel(def.providerID, def.modelID)
-        })()
+  // Get model and options using 3-tier fallback via helper
+  const { params: supportParams, modelInfo: modelInfo, prompt } = await buildSupportModelParams("apply", ctx.agent, ctx.sessionID)
 
   let contentNew: string | undefined
-  // Provider/model specific application
-  if (
-    modelInfo.modelID.includes("morph") ||
-    (modelInfo.modelID.includes("relace") && modelInfo.providerID === "openrouter")
-  ) {
-    // Morph expects single user message with instruction/code/update tags
+
+  // Path 1: Morph/Relace models (OpenAI API with special XML format)
+  if (modelInfo.modelID.includes("morph") || modelInfo.modelID.includes("relace")) {
     const applyMsg = `<instruction>${summary || "Apply edit"}</instruction>\n<code>${contentOld}</code>\n<update>${editOutput}</update>`
     const gen = await generateText({
-      model: modelInfo.language,
-      temperature: 0,
+      ...supportParams,
       maxRetries: 5,
       messages: [{ role: "user", content: applyMsg }],
     })
     contentNew = extractCodeFromMarkdown(gen.text)
-  } else if (modelInfo.providerID === "relace" && modelInfo.modelID === "apply") {
-    // Relace apply endpoint (no chat prompt semantics)
-    try {
-      const endpoint = (modelInfo.info.options && (modelInfo.info.options as any)["endpoint"]) || "/v1/code/apply"
-      const providerApi = (modelInfo.info as any).provider && (modelInfo.info as any).provider.api
-      const base = providerApi || (modelInfo.info.options && (modelInfo.info.options as any)["baseURL"]) || ""
-      const url = base.endsWith("/") ? base.slice(0, -1) + endpoint : base + endpoint
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: process.env["RELACE_API_KEY"] ? `Bearer ${process.env["RELACE_API_KEY"]}` : "",
-        },
-        body: JSON.stringify({ initialCode: contentOld, editSnippet: editOutput }),
-      })
-      if (resp.ok) {
-        const json: any = await resp.json().catch(() => ({}))
-        contentNew = json.mergedCode || json.code || json.result || contentOld
-      }
-    } catch {
-      // swallow; relace failure does NOT fall back to generic path per spec request
-    }
   } else {
-    // Generic fallback ONLY when neither morph nor relace
-    const promptText = applyAgent?.prompt ? (await Template.substitute(applyAgent.prompt)).trim() : ""
+    // Path 2: Generic fallback (all other models)
+    const promptText = prompt ? prompt.trim() : ""
     const instruction = promptText ? promptText + "\n\n" : ""
     const userContent = `${instruction}File: ${path.relative(Instance.directory, filePath)}\n\n--- ORIGINAL START ---\n${contentOld}\n--- ORIGINAL END ---\n\n--- CHANGES START ---\n${editOutput}\n--- CHANGES END ---`
     const gen = await generateText({
-      model: modelInfo.language,
-      temperature: 0,
+      ...supportParams,
       maxRetries: 5,
       messages: [{ role: "user", content: userContent }],
     })

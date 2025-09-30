@@ -6,10 +6,9 @@ import DESCRIPTION from "./bash.txt"
 // @ts-ignore
 import BASH_OUTPUT_SUMMARY_TEMPLATE from "./support/bash-output-summary.txt"
 import { Instance } from "../project/instance"
-import { Agent } from "../agent/agent"
-import { Provider } from "../provider/provider"
 import { generateText } from "ai"
 import { BashPermissions } from "../util/bash-permissions"
+import { buildSupportModelParams } from "../session/support-model-params"
 
 const DEFAULT_LIMIT = 1_000
 const DEFAULT_TIMEOUT = 1 * 60 * 1000
@@ -41,21 +40,14 @@ async function handleAgenticMode(params: any, ctx: any) {
   let fails = 0
   const convo: Array<{ role: "user" | "assistant"; content: string }> = []
 
-  const bashAgent = await Agent.get("bash")
-  const model = bashAgent?.model
-    ? await Provider.getModel(bashAgent.model.providerID, bashAgent.model.modelID)
-    : await (async () => {
-        const def = await Provider.defaultModel()
-        return Provider.getModel(def.providerID, def.modelID)
-      })()
-
   convo.push({ role: "user", content: params.description })
 
   type Step = { index: number; assistant: string; command: string; exitCode: number; output: string }
   const steps: Step[] = []
 
   while (i < maxIter) {
-    const gen = await generateText({ model: model.language, temperature: 0.3, maxRetries: 3, messages: convo })
+    const supportParams = await buildSupportModelParams("bash", ctx.agent, ctx.sessionID)
+    const gen = await generateText({ ...supportParams, maxRetries: 3, messages: convo })
     const assistant = gen.text.trim()
     const done = assistant.toLowerCase().includes("done") || assistant.toLowerCase().includes("complete")
     if (done) break
@@ -101,22 +93,13 @@ async function handleAgenticMode(params: any, ctx: any) {
 
   if (extended.length > limit) {
     if (params.autosummarize) {
-      let sumAgent = await Agent.get("bash-summary")
-      if (!sumAgent) sumAgent = await Agent.get("bash")
-      const sumModel = sumAgent?.model
-        ? await Provider.getModel(sumAgent.model.providerID, sumAgent.model.modelID)
-        : await (async () => {
-            const def = await Provider.defaultModel()
-            return Provider.getModel(def.providerID, def.modelID)
-          })()
-
       const instr = params.description
         ? `Summarize the following multi-step agentic bash session. Include the intent, key commands, notable outputs, and overall status.\n\nIntent: ${params.description}\n\nTranscript:\n'''${extended}'''`
         : `Summarize the following multi-step agentic bash session. Include key commands, notable outputs, and overall status.\n\nTranscript:\n'''${extended}'''`
 
+      const supportParams = await buildSupportModelParams("bash-summary", ctx.agent, ctx.sessionID)
       const sum = await generateText({
-        model: sumModel.language,
-        temperature: 0.3,
+        ...supportParams,
         maxRetries: 3,
         messages: [
           { role: "system", content: BASH_OUTPUT_SUMMARY_TEMPLATE },
@@ -225,22 +208,13 @@ export const BashTool = Tool.define("bash", {
     const limit = params.limit ?? DEFAULT_LIMIT
     if (out.length > limit) {
       if (params.autosummarize) {
-        let sumAgent = await Agent.get("bash-summary")
-        if (!sumAgent) sumAgent = await Agent.get("bash")
-        const useModel = sumAgent?.model
-          ? await Provider.getModel(sumAgent.model.providerID, sumAgent.model.modelID)
-          : await (async () => {
-              const def = await Provider.defaultModel()
-              return Provider.getModel(def.providerID, def.modelID)
-            })()
-
         const instr = params.description
           ? `Please summarize the following command output that had the original intent: ${params.description}\n\nCommand: ${cmd}\nOutput:\n'''${out}'''`
           : `Please summarize the following command output:\n\nCommand: ${cmd}\nOutput:\n'''${out}'''`
 
+        const supportParams = await buildSupportModelParams("bash-summary", ctx.agent, ctx.sessionID)
         const sum = await generateText({
-          model: useModel.language,
-          temperature: 0.3,
+          ...supportParams,
           maxRetries: 3,
           messages: [
             { role: "system", content: BASH_OUTPUT_SUMMARY_TEMPLATE },

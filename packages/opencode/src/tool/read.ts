@@ -9,9 +9,8 @@ import DESCRIPTION from "./read.txt"
 import FILE_SUMMARY_TEMPLATE from "./support/file-summary.txt"
 import { Filesystem } from "../util/filesystem"
 import { Instance } from "../project/instance"
-import { Agent } from "../agent/agent"
-import { Provider } from "../provider/provider"
 import { generateText } from "ai"
+import { buildSupportModelParams } from "../session/support-model-params"
 
 const DEFAULT_READ_LIMIT = 200
 const MAX_LINE_LENGTH = 2000
@@ -77,24 +76,16 @@ export const ReadTool = Tool.define("read", {
       // Get full file content for summarization
       const fullContent = lines.join("\n")
 
-      // Get summary agent configuration
-      const summaryAgent = await Agent.get("summary")
-      const useModel = summaryAgent?.model
-        ? await Provider.getModel(summaryAgent.model.providerID, summaryAgent.model.modelID)
-        : await (async () => {
-            const def = await Provider.defaultModel()
-            return Provider.getModel(def.providerID, def.modelID)
-          })()
-
       // Generate summary using the support model
       const userInstruction = `Please summarize the following file content with focus on: ${params.query}\n\nFile: ${path.relative(Instance.worktree, filepath)}\n\n'''${fullContent}'''`
 
+      const { params: supportParams, prompt } = await buildSupportModelParams("summary", ctx.agent, ctx.sessionID)
+      const systemPrompt = prompt ?? FILE_SUMMARY_TEMPLATE
       const summaryGen = await generateText({
-        model: useModel.language,
-        temperature: 0.3,
+        ...supportParams,
         maxRetries: 3,
         messages: [
-          { role: "system", content: FILE_SUMMARY_TEMPLATE },
+          { role: "system", content: systemPrompt },
           { role: "user", content: userInstruction },
         ],
       })

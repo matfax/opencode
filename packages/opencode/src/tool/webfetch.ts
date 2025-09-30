@@ -6,9 +6,8 @@ import DESCRIPTION from "./webfetch.txt"
 import SUMMARY_TEMPLATE from "./support/web-summary.txt"
 import { Config } from "../config/config"
 import { Permission } from "../permission"
-import { Agent } from "../agent/agent"
-import { Provider } from "../provider/provider"
 import { generateText } from "ai"
+import { buildSupportModelParams } from "../session/support-model-params"
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
 const DEFAULT_TIMEOUT = 30
@@ -137,26 +136,18 @@ export const WebFetchTool = Tool.define("webfetch", {
           markdown = content
         }
 
-        // Get summary agent configuration
-        const summaryAgent = await Agent.get("summary")
-        const useModel = summaryAgent?.model
-          ? await Provider.getModel(summaryAgent.model.providerID, summaryAgent.model.modelID)
-          : await (async () => {
-              const def = await Provider.defaultModel()
-              return Provider.getModel(def.providerID, def.modelID)
-            })()
-
         // Generate summary using the support model
         const userInstruction = params.prompt
           ? `Please summarize the following web page content with focus on: ${params.prompt}\n\n'''${markdown}'''`
           : `Please summarize the following web page content:\n\n'''${markdown}'''`
 
+        const { params: supportParams, prompt } = await buildSupportModelParams("summary", ctx.agent, ctx.sessionID)
+        const systemPrompt = prompt ?? SUMMARY_TEMPLATE
         const summaryGen = await generateText({
-          model: useModel.language,
-          temperature: 0.3,
+          ...supportParams,
           maxRetries: 3,
           messages: [
-            { role: "system", content: SUMMARY_TEMPLATE },
+            { role: "system", content: systemPrompt },
             { role: "user", content: userInstruction },
           ],
         })

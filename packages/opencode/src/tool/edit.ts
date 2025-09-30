@@ -17,7 +17,6 @@ import DIFF_EXAMPLE from "./support/diff.txt"
 import { Filesystem } from "../util/filesystem"
 import { Instance } from "../project/instance"
 import { Agent } from "../agent/agent"
-import { Provider } from "../provider/provider"
 import { Template } from "../util/template"
 import { generateText } from "ai"
 // Shared apply & utility functions
@@ -25,6 +24,7 @@ import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite } from "
 import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../util/extract"
 import { LSP } from "../lsp"
 import { Permission } from "../permission"
+import { buildSupportModelParams } from "../session/support-model-params"
 // Re-export replace for existing tests that import from this module
 export { replace } from "../util/apply"
 
@@ -102,18 +102,10 @@ export const EditTool = Tool.define("edit", {
       },
     })
 
-    // Resolve edit and apply agents and models
-    const editAgent = await Agent.get("edit")
-    // Silent fallback: if agent or model missing, just use default model
-    const useModel = editAgent?.model
-      ? await Provider.getModel(editAgent.model.providerID, editAgent.model.modelID)
-      : await (async () => {
-          const def = await Provider.defaultModel()
-          return Provider.getModel(def.providerID, def.modelID)
-        })()
-    // Determine initial format preference
+    // Determine initial format preference based on apply agent
     const applyAgentForFormat = await Agent.get("apply")
-    let currentFormat = !!applyAgentForFormat?.model ? Template.Format.Snippet : Template.Format.Diff
+    const hasApplyModel = applyAgentForFormat?.model !== undefined
+    let currentFormat = hasApplyModel ? Template.Format.Snippet : Template.Format.Diff
 
     // Build contextual messages (unchanged across retries)
     const fileMessages = [] as { role: "user"; content: string }[]
@@ -157,7 +149,9 @@ export const EditTool = Tool.define("edit", {
       // Build system messages for this format
       currentFormat = attempt <= 2 ? currentFormat : Template.Format.Diff
       const example = currentFormat === Template.Format.Snippet ? SNIPPET_EXAMPLE : DIFF_EXAMPLE
-      const substituted = await Template.substituteInputs(await Template.substitute(EDIT_TEMPLATE), {
+      const { params: supportParams, prompt } = await buildSupportModelParams("edit", ctx.agent, ctx.sessionID)
+      const baseTemplate = prompt ?? EDIT_TEMPLATE
+      const substituted = await Template.substituteInputs(await Template.substitute(baseTemplate), {
         format: currentFormat,
         example,
       })
@@ -182,8 +176,7 @@ export const EditTool = Tool.define("edit", {
       let editGen
       try {
         editGen = await generateText({
-          model: useModel.language,
-          temperature: 0,
+          ...supportParams,
           maxRetries: 0,
           messages,
         })
@@ -217,11 +210,6 @@ export const EditTool = Tool.define("edit", {
           diff: preview,
         },
       })
-
-      // Try to apply the edit and run diagnostics/write. If diagnostics indicate syntax errors,
-      // allow another retry. Fail fast for other errors (including model failures inside apply).
-      const applyAgent = await Agent.get("apply")
-      const hasApplyModel = applyAgent?.model !== undefined
 
       const { contentNew, diff } =
         hasApplyModel && currentFormat === Template.Format.Snippet

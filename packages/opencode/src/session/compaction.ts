@@ -15,6 +15,7 @@ import { Token } from "../util/token"
 import { Log } from "../util/log"
 import { Agent } from "../agent/agent"
 import { Template } from "../util/template"
+import { buildSupportModelParams } from "./support-model-params"
 // Statically import the compact template (raw text)
 // @ts-ignore: allow importing .txt as raw string
 import COMPACT_TEMPLATE from "./prompt/compact.txt"
@@ -87,7 +88,7 @@ export namespace SessionCompaction {
     }
   }
 
-  export async function run(input: { sessionID: string; providerID: string; modelID: string }) {
+  export async function run(input: { sessionID: string; providerID: string; modelID: string; agent: Agent.Info }) {
     await Session.update(input.sessionID, (draft) => {
       draft.time.compacting = Date.now()
     })
@@ -100,16 +101,22 @@ export namespace SessionCompaction {
     const allMsgs = await Session.messages(input.sessionID).then(MessageV2.filterSummarized)
     const agentConfig = await Agent.get("compact")
     const rootModel = await Provider.getModel(input.providerID, input.modelID)
-    const useModel = agentConfig?.model
-      ? await Provider.getModel(agentConfig.model.providerID, agentConfig.model.modelID)
-      : rootModel
     const bufferCount = agentConfig?.options?.buffer ?? 3
     const lastSummaryIdx = allMsgs.findLastIndex((m) => m.info.role === "assistant" && !!m.info.summary)
     const newMsgs = lastSummaryIdx === -1 ? allMsgs.slice() : allMsgs.slice(lastSummaryIdx + 1)
     const toSummarize = bufferCount > 0 ? newMsgs.slice(0, Math.max(0, newMsgs.length - bufferCount)) : newMsgs
+
+    // Build support params once (handles model selection + option merging)
+    // Use calling agent (primary) if provided, otherwise fall back to default model
+    const { params: supportParams, modelInfo, prompt } = await buildSupportModelParams(
+      "compact",
+      input.agent.name,
+      input.sessionID,
+    )
+
     // Build system context once and reuse for message + LLM call
     const system = [
-      ...SystemPrompt.summarize(useModel.providerID),
+      ...SystemPrompt.summarize(modelInfo.providerID),
       ...(await SystemPrompt.environment()),
       ...(await SystemPrompt.custom()),
     ]
@@ -139,20 +146,17 @@ export namespace SessionCompaction {
     })) as MessageV2.Assistant
     // Inline compaction logic: load agent config & template
     // Load and substitute env/file placeholders in static template
-    const rawTmpl = agentConfig.prompt
-      ? await Template.load(agentConfig.prompt)
-      : await Template.substitute(COMPACT_TEMPLATE)
+    const rawTmpl = prompt ?? (await Template.substitute(COMPACT_TEMPLATE))
     const convMsgs: ModelMessage[] = MessageV2.toModelMessage(toSummarize)
     // Build final messages: system context, conversation, then user instructions
     const systemMsgs: ModelMessage[] = system.map((text) => ({ role: "system", content: text }))
     const userMsg: ModelMessage = { role: "user", content: rawTmpl }
     const generated = await generateText({
+      ...supportParams,
       maxRetries: 10,
-      model: useModel.language,
-      temperature: 0.3,
       messages: [...systemMsgs, ...convMsgs, userMsg],
     })
-    const usageRes = Session.getUsage(useModel.info, generated.usage, generated.providerMetadata)
+    const usageRes = Session.getUsage(modelInfo.info, generated.usage, generated.providerMetadata)
     msg.cost += usageRes.cost
     msg.tokens = usageRes.tokens
     msg.summary = true

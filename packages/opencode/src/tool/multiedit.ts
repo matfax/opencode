@@ -6,7 +6,6 @@ import { Instance } from "../project/instance"
 import { Filesystem } from "../util/filesystem"
 import { generateText } from "ai"
 import { Agent } from "../agent/agent"
-import { Provider } from "../provider/provider"
 import { Template } from "../util/template"
 import { handleDiagnosticsAndFileWrite, trimDiff, diffEditOutput, applyEditOutput } from "../util/apply"
 import { RemoveTool } from "./remove"
@@ -17,6 +16,7 @@ import { FileTime } from "../file/time"
 import { Permission } from "../permission"
 import fs from "fs/promises"
 import { parseReportAndCodeSections } from "../util/extract"
+import { buildSupportModelParams } from "../session/support-model-params"
 // @ts-ignore
 import MULTIEDIT_TEMPLATE from "./support/multiedit.txt"
 // @ts-ignore
@@ -86,7 +86,9 @@ export const MultiEditTool = Tool.define("multiedit", {
     // System template reuse from single edit tool support examples
     // We keep it simple: instruct model to output angle sentinel sections
     const example = format === Template.Format.Snippet ? MULTISNIPPET_EXAMPLE : MULTIDIFF_EXAMPLE
-    const substituted = await Template.substituteInputs(await Template.substitute(MULTIEDIT_TEMPLATE), {
+    const { params: supportParams, prompt } = await buildSupportModelParams("edit", ctx.agent, ctx.sessionID)
+    const baseTemplate = prompt ?? MULTIEDIT_TEMPLATE
+    const substituted = await Template.substituteInputs(await Template.substitute(baseTemplate), {
       format: format,
       example,
     })
@@ -100,14 +102,6 @@ export const MultiEditTool = Tool.define("multiedit", {
     const MAX_CONTEXT_FILES = 30
     const baseRelevant = new Set<string>(params.relevantFiles || [])
     const attemptedFiles = new Set<string>([...baseRelevant])
-
-    const editAgent = await Agent.get("multiedit")
-    const useModel = editAgent?.model
-      ? await Provider.getModel(editAgent.model.providerID, editAgent.model.modelID)
-      : await (async () => {
-          const def = await Provider.defaultModel()
-          return Provider.getModel(def.providerID, def.modelID)
-        })()
 
     let sections: Section[] = []
     let attempt = 0
@@ -132,8 +126,7 @@ export const MultiEditTool = Tool.define("multiedit", {
       const finalUser = { role: "user" as const, content: `## Instructions\n${params.instructions}` }
 
       const gen = await generateText({
-        model: useModel.language,
-        temperature: 0,
+        ...supportParams,
         maxRetries: 5,
         messages: [...systemMsgs, ...fileMessages, finalUser],
       })
