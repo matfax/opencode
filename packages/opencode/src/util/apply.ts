@@ -139,18 +139,23 @@ export async function handleDiagnosticsAndFileWrite(
   })
 
   const permissionType: "edit" | "write" = type
+  // Check if LSP was unavailable (empty diagnostics object means no LSP clients)
+  const lspUnavailable = Object.keys(diagnostics).length === 0
+
   // Prompt for permission after diagnostics pass, unless skipped
   if (!skipPermission) {
     const agent = await Agent.get(ctx.agent)
     // Determine permission based on edit permission for both edit and write
-    if (agent.permission.edit === "ask") {
+    // When LSP is unavailable, use strict mode to require approval even in build mode
+    if (agent.permission.edit === "ask" || lspUnavailable) {
       await Permission.ask({
         type: permissionType,
         sessionID: ctx.sessionID,
         messageID: ctx.messageID,
         callID: ctx.callID,
-        title: title ?? `${permissionType === "edit" ? "Edit" : "Write"} this file: ${absolutePath}`,
-        metadata: { filePath: absolutePath, diff },
+        title: title ?? `${permissionType === "edit" ? "Edit" : "Write"} this file: ${absolutePath}${lspUnavailable ? " (LSP unavailable)" : ""}`,
+        metadata: { filePath: absolutePath, diff, lspUnavailable },
+        ...(lspUnavailable && { strict: true }),
       })
     }
   }
