@@ -18,24 +18,6 @@ export namespace Permission {
     return keys.every((k) => pats.some((p) => Wildcard.match(k, p)))
   }
 
-  function buildRejectMessage(rejectType?: RejectReason, customReason?: string): string {
-    switch (rejectType) {
-      case "syntax":
-        return `The user rejected this due to a syntax error. ${customReason || "Please fix the syntax and try again."}`
-      case "approach":
-        return `The user rejected this approach. ${customReason || "The user agrees with the intent but wants a different implementation approach. Do not retry the same approach."}`
-      case "intent":
-        return `The user rejected this intent. ${customReason || "Do not pursue this direction or similar approaches. The user does not want this functionality."}`
-      case "custom":
-        return customReason || "The user rejected permission to use this specific tool call."
-      default:
-        return (
-          customReason ||
-          "The user rejected permission to use this specific tool call. You may try again with different parameters."
-        )
-    }
-  }
-
   export const Info = z
     .object({
       id: z.string(),
@@ -172,10 +154,54 @@ export namespace Permission {
     if (!match) return
     delete pending[input.sessionID][input.permissionID]
     if (input.response === "reject") {
-      const rejectMessage = buildRejectMessage(input.rejectType, input.reason)
-      match.reject(
-        new RejectedError(input.sessionID, input.permissionID, match.info.callID, match.info.metadata, rejectMessage),
-      )
+      let error: RejectedError
+      switch (input.rejectType) {
+        case "syntax":
+          error = new RejectedSyntaxError(
+            input.sessionID,
+            input.permissionID,
+            match.info.callID,
+            match.info.metadata,
+            input.reason,
+          )
+          break
+        case "approach":
+          error = new RejectedApproachError(
+            input.sessionID,
+            input.permissionID,
+            match.info.callID,
+            match.info.metadata,
+            input.reason,
+          )
+          break
+        case "intent":
+          error = new RejectedIntentError(
+            input.sessionID,
+            input.permissionID,
+            match.info.callID,
+            match.info.metadata,
+            input.reason,
+          )
+          break
+        case "custom":
+          error = new RejectedCustomError(
+            input.sessionID,
+            input.permissionID,
+            match.info.callID,
+            match.info.metadata,
+            input.reason,
+          )
+          break
+        default:
+          error = new RejectedError(
+            input.sessionID,
+            input.permissionID,
+            match.info.callID,
+            match.info.metadata,
+            input.reason,
+          )
+      }
+      match.reject(error)
       return
     }
     match.resolve()
@@ -202,17 +228,78 @@ export namespace Permission {
   }
 
   export class RejectedError extends Error {
+    public readonly rejectType?: RejectReason
+
     constructor(
       public readonly sessionID: string,
       public readonly permissionID: string,
       public readonly toolCallID?: string,
       public readonly metadata?: Record<string, any>,
       public readonly reason?: string,
+      rejectType?: RejectReason,
     ) {
       super(
         reason ||
-          `The user rejected permission to use this specific tool call. You may try again with different parameters.`,
+          "The user rejected permission to use this specific tool call. You may try again with different parameters.",
       )
+      this.name = "RejectedError"
+      this.rejectType = rejectType
+    }
+  }
+
+  export class RejectedSyntaxError extends RejectedError {
+    constructor(
+      sessionID: string,
+      permissionID: string,
+      toolCallID?: string,
+      metadata?: Record<string, any>,
+      customReason?: string,
+    ) {
+      const message = `The user rejected this due to a syntax error. ${customReason || "Please fix the syntax and try again."}`
+      super(sessionID, permissionID, toolCallID, metadata, message, "syntax")
+      this.name = "RejectedSyntaxError"
+    }
+  }
+
+  export class RejectedApproachError extends RejectedError {
+    constructor(
+      sessionID: string,
+      permissionID: string,
+      toolCallID?: string,
+      metadata?: Record<string, any>,
+      customReason?: string,
+    ) {
+      const message = `The user rejected this approach. ${customReason || "The user agrees with the intent but wants a different implementation approach. Do not retry the same approach."}`
+      super(sessionID, permissionID, toolCallID, metadata, message, "approach")
+      this.name = "RejectedApproachError"
+    }
+  }
+
+  export class RejectedIntentError extends RejectedError {
+    constructor(
+      sessionID: string,
+      permissionID: string,
+      toolCallID?: string,
+      metadata?: Record<string, any>,
+      customReason?: string,
+    ) {
+      const message = `The user rejected this intent. ${customReason || "Do not pursue this direction or similar approaches. The user does not want this functionality."}`
+      super(sessionID, permissionID, toolCallID, metadata, message, "intent")
+      this.name = "RejectedIntentError"
+    }
+  }
+
+  export class RejectedCustomError extends RejectedError {
+    constructor(
+      sessionID: string,
+      permissionID: string,
+      toolCallID?: string,
+      metadata?: Record<string, any>,
+      customReason?: string,
+    ) {
+      const message = customReason || "The user rejected permission to use this specific tool call."
+      super(sessionID, permissionID, toolCallID, metadata, message, "custom")
+      this.name = "RejectedCustomError"
     }
   }
 }
