@@ -427,7 +427,7 @@ export namespace Provider {
           temperature: false,
           tool_call: false,
           cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 },
-          limit: { context: 81920, output: 38000 },
+          limit: { context: 32000, output: 32000 },
           options: { format: "xml" },
         }
       }
@@ -442,7 +442,7 @@ export namespace Provider {
           temperature: false,
           tool_call: false,
           cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 },
-          limit: { context: 81920, output: 38000 },
+          limit: { context: 16000, output: 16000 },
           options: { format: "xml" },
         }
       }
