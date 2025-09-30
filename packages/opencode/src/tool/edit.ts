@@ -112,7 +112,7 @@ export const EditTool = Tool.define("edit", {
         })()
     // Determine initial format preference
     const applyAgentForFormat = await Agent.get("apply")
-    let currentFormat = !!(applyAgentForFormat?.model) ? Template.Format.Snippet : Template.Format.Diff
+    let currentFormat = !!applyAgentForFormat?.model ? Template.Format.Snippet : Template.Format.Diff
 
     // Build contextual messages (unchanged across retries)
     const fileMessages = [] as { role: "user"; content: string }[]
@@ -154,7 +154,7 @@ export const EditTool = Tool.define("edit", {
       })
 
       // Build system messages for this format
-      currentFormat = (attempt <= 2) ? currentFormat : Template.Format.Diff
+      currentFormat = attempt <= 2 ? currentFormat : Template.Format.Diff
       const example = currentFormat === Template.Format.Snippet ? SNIPPET_EXAMPLE : DIFF_EXAMPLE
       const substituted = await Template.substituteInputs(await Template.substitute(EDIT_TEMPLATE), {
         format: currentFormat,
@@ -253,7 +253,9 @@ export const EditTool = Tool.define("edit", {
       // Only block write if there are diagnostics for the target file
       if (diagnostics[absolutePath] && diagnostics[absolutePath].length > 0) {
         if (attempt >= MAX_RETRIES) {
-          throw new Error(`Changes not applied due to persistent diagnostic errors:\n${Object.values(diagnostics).flat().map(LSP.Diagnostic.pretty).join("\n")}`)
+          throw new Error(
+            `Changes not applied due to persistent diagnostic errors:\n${Object.values(diagnostics).flat().map(LSP.Diagnostic.pretty).join("\n")}`,
+          )
         }
         lastError = `Changes would introduce diagnostic errors:\n${Object.values(diagnostics).flat().map(LSP.Diagnostic.pretty).join("\n")}`
       } else {
@@ -265,14 +267,14 @@ export const EditTool = Tool.define("edit", {
     }
 
     return {
-        title: `Edited ${path.relative(Instance.directory, filePath)}`,
-        metadata: {
-          diagnostics: {},
-          format: "diff",
-          diff: outputDiff,
-          error: lastError,
-        },
-        output: summary,
-      }
+      title: `Edited ${path.relative(Instance.directory, filePath)}`,
+      metadata: {
+        diagnostics: {},
+        format: "diff",
+        diff: outputDiff,
+        error: lastError,
+      },
+      output: summary,
+    }
   },
 })

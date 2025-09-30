@@ -22,10 +22,7 @@ export const ReadTool = Tool.define("read", {
     filePath: z.string().describe("The path to the file to read"),
     limit: z.coerce.number().optional().default(DEFAULT_READ_LIMIT).describe("The number of lines to read"),
     offset: z.coerce.number().optional().default(0).describe("The line number to start reading from (0-based)"),
-    query: z
-      .string()
-      .optional()
-      .describe("Query for the summary model (enables auto-summary)"),
+    query: z.string().optional().describe("Query for the summary model (enables auto-summary)"),
   }),
   key: (p) => {
     return ["read", "a" + (p.query ? "1" : "0"), p.filePath].join("|")

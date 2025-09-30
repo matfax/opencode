@@ -614,7 +614,7 @@ export function EditTool(props: ToolProps) {
                 <ContentDiff diff={props.state.metadata?.diff} lang={getShikiLang(filePath() || "")} />
               </div>
             </Match>
-            
+
             {/* Render code snippet for "snippet" format */}
             <Match when={format() === "snippet"}>
               <div data-component="snippet">
