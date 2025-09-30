@@ -565,28 +565,85 @@ export function EditTool(props: ToolProps) {
   const filePath = createMemo(() => stripWorkingDirectory(props.state.input.filePath, props.message.path.cwd))
   const diagnostics = createMemo(() => getDiagnostics(props.state.metadata?.diagnostics, props.state.input.filePath))
 
+  // Get status information from metadata
+  const status = createMemo(() => props.state.metadata?.status || "unknown")
+  const attempt = createMemo(() => props.state.metadata?.attempt || 1)
+  const maxRetries = createMemo(() => props.state.metadata?.maxRetries || 1)
+  const statusMessage = createMemo(() => props.state.metadata?.message || "")
+
+  // Determine if we're in running, completed, or error state
+  const isRunning = createMemo(() => status() === "running")
+  const isCompleted = createMemo(() => status() === "completed")
+  const isError = createMemo(() => status() === "error" || !!props.state.metadata?.error)
+
+  // Get format from metadata to determine rendering
+  const format = createMemo(() => props.state.metadata?.format || "diff")
+
   return (
     <>
+      {/* Title (Edit + filepath) */}
       <div data-component="tool-title">
         <span data-slot="name">Edit</span>
         <span data-slot="target" title={props.state.input?.filePath}>
           {filePath()}
         </span>
       </div>
-      <div data-component="tool-result">
-        <Switch>
-          <Match when={props.state.metadata?.error}>
-            <ContentError>{formatErrorString(props.state.metadata?.message || "")}</ContentError>
-          </Match>
-          <Match when={props.state.metadata?.diff}>
-            <div data-component="diff">
-              <ContentDiff diff={props.state.metadata?.diff} lang={getShikiLang(filePath() || "")} />
-            </div>
-          </Match>
-        </Switch>
+
+      {/* Status line (attempt/max retries + status message) */}
+      <div data-component="tool-status">
+        <span data-slot="attempt">
+          Attempt {attempt()}/{maxRetries()}
+        </span>
+        <span data-slot="status-message">{statusMessage()}</span>
       </div>
+
+      {/* Instruction field (during running state) */}
+      <Show when={isRunning() && props.state.input.instructions}>
+        <div data-component="tool-instruction">
+          <ContentText expand text={props.state.input.instructions} />
+        </div>
+      </Show>
+
+      {/* Preview snippet/diff (dynamic format switching) */}
+      <Show when={!isError() && !!props.state.metadata?.diff}>
+        <div data-component="tool-preview">
+          <Switch>
+            {/* Render diff view for "diff" format */}
+            <Match when={format() === "diff"}>
+              <div data-component="diff">
+                <ContentDiff diff={props.state.metadata?.diff} lang={getShikiLang(filePath() || "")} />
+              </div>
+            </Match>
+            
+            {/* Render code snippet for "snippet" format */}
+            <Match when={format() === "snippet"}>
+              <div data-component="snippet">
+                <ContentCode code={props.state.metadata?.diff} lang={getShikiLang(filePath() || "")} />
+              </div>
+            </Match>
+          </Switch>
+        </div>
+      </Show>
+
+      {/* Summary field (when completed) */}
+      <Show when={isCompleted() && props.state.output}>
+        <div data-component="tool-summary">
+          <ContentText expand text={props.state.output} />
+        </div>
+      </Show>
+
+      {/* Error state: Show error message prominently */}
+      <Show when={isError()}>
+        <ContentError>
+          {formatErrorString(props.state.metadata?.error || props.state.metadata?.message || "An error occurred")}
+        </ContentError>
+      </Show>
+
+      {/* Diagnostics/errors */}
       <Show when={diagnostics().length > 0}>
-        <ContentError>{diagnostics()}</ContentError>
+        <div data-component="tool-diagnostics">
+          <ContentError>{diagnostics()}</ContentError>
+        </div>
       </Show>
     </>
   )

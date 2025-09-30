@@ -469,19 +469,34 @@ export namespace SessionPrompt {
             agent: input.agent.name,
             metadata: async (val) => {
               const match = input.processor.partFromToolCall(options.toolCallId)
-              if (match && match.state.status === "running") {
-                await Session.updatePart({
-                  ...match,
-                  state: {
-                    title: val.title,
-                    metadata: val.metadata,
-                    status: "running",
-                    input: args,
-                    time: {
-                      start: Date.now(),
-                    },
-                  },
-                })
+              if (match) {
+                const prevMeta = match.state.metadata || {}
+                const inputMeta = val.metadata || {}
+                const mergedMeta = mergeDeep(prevMeta, inputMeta)
+
+                switch (match.state.status) {
+                  case "running":
+                    await Session.updatePart({
+                      ...match,
+                      state: {
+                        title: val.title ?? match.state.title,
+                        metadata: mergedMeta,
+                        status: "running",
+                        input: args,
+                        time: match.state.time || Date.now(),
+                      },
+                    })
+                    break
+                  case "pending":
+                    await Session.updatePart({
+                      ...match,
+                      state: {
+                        metadata: mergedMeta,
+                        status: "pending",
+                      },
+                    })
+                    break
+                }
               }
             },
           })
@@ -1087,6 +1102,7 @@ export namespace SessionPrompt {
                     state: {
                       status: "running",
                       input: value.input,
+                      metadata: match.state.metadata || {},
                       time: {
                         start: Date.now(),
                       },
@@ -1100,7 +1116,8 @@ export namespace SessionPrompt {
                 const match = toolcalls[value.toolCallId]
                 if (match && match.state.status === "running") {
                   // supersede logic: compute key if tool had one
-                  let metadata = value.output.metadata || {}
+                  // Preserve running state metadata by merging with output metadata
+                  let metadata: Record<string, any> = mergeDeep(match.state.metadata || {}, value.output.metadata || {})
                   const metaFns = toolMeta[match.tool]
                   let key: string | undefined
                   if (metaFns?.key) {

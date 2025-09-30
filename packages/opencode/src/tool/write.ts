@@ -25,18 +25,17 @@ export const WriteTool = Tool.define("write", {
     if (exists) await FileTime.assert(ctx.sessionID, filepath)
 
     // Use centralized helper for diagnostics, permission check, and file writing
-    const { diagnostics } = await handleDiagnosticsAndFileWrite(filepath, params.content, {
+    const { diagnostics, absolutePath } = await handleDiagnosticsAndFileWrite(filepath, params.content, {
       ctx,
       type: "write",
       title: exists ? "Overwrite this file: " + filepath : "Create new file: " + filepath,
     })
 
     let output = ""
-    await LSP.touchFile(filepath, true)
     for (const [file, issues] of Object.entries(diagnostics)) {
       if (issues.length === 0) continue
-      if (file === filepath) {
-        output += `\nThis file has errors, please fix\n<file_diagnostics>\n${issues.map(LSP.Diagnostic.pretty).join("\n")}\n</file_diagnostics>\n`
+      if (file === absolutePath) {
+        output += `\nThe target file has diagnostic errors, please fix\n<file_diagnostics>\n${issues.map(LSP.Diagnostic.pretty).join("\n")}\n</file_diagnostics>\n`
         continue
       }
       output += `\n<project_diagnostics>\n${file}\n${issues.map(LSP.Diagnostic.pretty).join("\n")}\n</project_diagnostics>\n`

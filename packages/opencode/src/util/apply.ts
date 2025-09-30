@@ -16,16 +16,6 @@ import { readFile } from "fs/promises"
 import type { LSPClient } from "../lsp/client"
 import type { Tool } from "../tool/tool"
 
-// Specific error thrown when diagnostics report syntax/type errors after applying an edit
-export class SyntaxErrorAfterEdit extends Error {
-  public fileErrors: LSPClient.Diagnostic[]
-  constructor(message: string, fileErrors: LSPClient.Diagnostic[]) {
-    super(message)
-    this.name = "SyntaxErrorAfterEdit"
-    this.fileErrors = fileErrors
-  }
-}
-
 export function trimDiff(diff: string): string {
   const lines = diff.split("\n")
   const contentLines = lines.filter(
@@ -77,6 +67,12 @@ export async function handleDiagnosticsAndFileWrite(
   const { ctx, diff: diffOpt, type = "edit", title, skipPermission } = options
   const absolutePath = path.resolve(filePath)
 
+  ctx.metadata({
+    metadata: {
+      status: "Running diagnostics",
+    },
+  })
+
   // Push virtual content and capture diagnostics map
   let diagnostics: Record<string, LSPClient.Diagnostic[]>
   try {
@@ -88,15 +84,28 @@ export async function handleDiagnosticsAndFileWrite(
     throw err
   }
 
-  // Filter for severity-1 errors
-  const fileDiagnostics = diagnostics[absolutePath]?.filter((diag: LSPClient.Diagnostic) => diag.severity === 1) || []
-  if (fileDiagnostics.length > 0) {
+  // Only block write if there are diagnostics for the target file
+  if (diagnostics[absolutePath] && diagnostics[absolutePath].length > 0) {
     try {
       await LSP.revertVirtualContent(absolutePath)
     } catch {}
-    const errorMessage = `File has errors after edit:\n${fileDiagnostics.map(LSP.Diagnostic.pretty).join("\n")}`
-    throw new SyntaxErrorAfterEdit(errorMessage, fileDiagnostics)
+    ctx.metadata({
+      metadata: {
+        diagnostics: diagnostics,
+        status: "Encountered diagnostic errors",
+        error: "Diagnostic errors detected",
+      },
+    })
+    return { diagnostics, absolutePath, diff: diffOpt }
   }
+
+  ctx.metadata({
+    metadata: {
+      diagnostics: diagnostics,
+      status: "No diagnostic errors detected",
+      error: "", // Clear any previous error
+    },
+  })
 
   let diff: string
   if (diffOpt) {
@@ -123,6 +132,12 @@ export async function handleDiagnosticsAndFileWrite(
     diff = trimDiff(rawDiff)
   }
 
+  ctx.metadata({
+    metadata: {
+      status: "Waiting for permission to write file",
+    },
+  })
+
   const permissionType: "edit" | "write" = type
   // Prompt for permission after diagnostics pass, unless skipped
   if (!skipPermission) {
@@ -139,6 +154,12 @@ export async function handleDiagnosticsAndFileWrite(
       })
     }
   }
+
+  ctx.metadata({
+    metadata: {
+      status: "Writing file to storage",
+    },
+  })
 
   // Write file to disk
   try {
@@ -158,7 +179,7 @@ export async function handleDiagnosticsAndFileWrite(
   FileTime.read(ctx.sessionID, absolutePath)
   await LSP.touchFile(absolutePath)
 
-  return { diagnostics, diff }
+  return { diagnostics, absolutePath, diff }
 }
 
 export { replace }

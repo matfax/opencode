@@ -20,6 +20,7 @@ export namespace MessageV2 {
   export const ToolStatePending = z
     .object({
       status: z.literal("pending"),
+      metadata: z.record(z.string(), z.any()).optional(),
     })
     .meta({
       ref: "ToolStatePending",

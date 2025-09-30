@@ -285,6 +285,7 @@ func (m *messagesComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.header = msg.header
 		if m.dirty {
 			cmds = append(cmds, m.renderView())
+			m.dirty = false
 		}
 
 		// Start shimmer ticks if any assistant/tool is in-flight
@@ -584,7 +585,7 @@ func (m *messagesComponent) renderView() tea.Cmd {
 							permission = m.app.CurrentPermission
 						}
 
-						if !m.showToolDetails && permission.ID == "" {
+						if !m.showToolDetails && permission.ID == "" && part.State.Status != opencode.ToolPartStateStatusRunning {
 							if !hasTextPart {
 								orphanedToolCalls = append(orphanedToolCalls, part)
 							}

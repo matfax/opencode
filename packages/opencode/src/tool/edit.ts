@@ -21,8 +21,9 @@ import { Provider } from "../provider/provider"
 import { Template } from "../util/template"
 import { generateText } from "ai"
 // Shared apply & utility functions
-import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite, SyntaxErrorAfterEdit } from "../util/apply"
+import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite } from "../util/apply"
 import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../util/extract"
+import { LSP } from "../lsp"
 // Re-export replace for existing tests that import from this module
 export { replace } from "../util/apply"
 
@@ -30,23 +31,24 @@ export { replace } from "../util/apply"
 declare const Bun: any
 
 // Adapter to keep existing variable names when switching to shared parser
-function parseEditOutput(output: string): { summary: string; code: string } {
+function parseEditOutput(output: string): { output: string; code: string } {
   const { report, codePart } = parseReportAndCodeSections(output)
   if (!report && !codePart) {
     const extractedCode = extractCodeFromMarkdown(output)
     if (!extractedCode || extractedCode.trim() === "") {
       throw new Error("No code found in model output: " + output)
     } else {
-      return { summary: "No summary provided", code: extractedCode }
+      return { output: "No summary provided", code: extractedCode }
     }
   } else if (!codePart || codePart.trim() === "") {
-    throw new Error("Edit rejected: " + output)
+    throw new Error("Edit rejected: " + report)
   }
-  return { summary: report, code: codePart }
+  return { output: report, code: codePart }
 }
 
 // Add retry configuration
 const MAX_RETRIES = 5
+const PREVIEW_LINES = 20
 
 export const EditTool = Tool.define("edit", {
   description: DESCRIPTION,
@@ -78,7 +80,9 @@ export const EditTool = Tool.define("edit", {
     ctx.metadata({
       metadata: {
         status: "Reading target file",
-        filePath: filePath,
+        maxRetries: MAX_RETRIES,
+        previewLines: PREVIEW_LINES,
+        attempt: 1,
       },
     })
 
@@ -94,7 +98,6 @@ export const EditTool = Tool.define("edit", {
     ctx.metadata({
       metadata: {
         status: "Resolving edit agents and models",
-        filePath: filePath,
       },
     })
 
@@ -109,8 +112,7 @@ export const EditTool = Tool.define("edit", {
         })()
     // Determine initial format preference
     const applyAgentForFormat = await Agent.get("apply")
-    const hasApplyModelForFormat = !!applyAgentForFormat?.model
-    let currentFormat = hasApplyModelForFormat ? Template.Format.Snippet : Template.Format.Diff
+    let currentFormat = !!(applyAgentForFormat?.model) ? Template.Format.Snippet : Template.Format.Diff
 
     // Build contextual messages (unchanged across retries)
     const fileMessages = [] as { role: "user"; content: string }[]
@@ -123,7 +125,6 @@ export const EditTool = Tool.define("edit", {
       ctx.metadata({
         metadata: {
           status: "Building contextual messages",
-          filePath: filePath,
         },
       })
 
@@ -141,21 +142,19 @@ export const EditTool = Tool.define("edit", {
     // Retry loop that covers generation, application, and diagnostics write.
     let lastError = ""
     let summary = ""
-    let code = ""
+    let outputDiff = ""
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       // Update status: preparing prompt
       ctx.metadata({
         metadata: {
-          status: `Preparing prompt (attempt ${attempt}/${MAX_RETRIES})`,
-          filePath: filePath,
-          attempt: attempt,
-          maxRetries: MAX_RETRIES,
+          status: `Preparing prompt`,
+          attempt,
         },
       })
 
       // Build system messages for this format
-      currentFormat = attempt <= 2 ? currentFormat : Template.Format.Diff
+      currentFormat = (attempt <= 2) ? currentFormat : Template.Format.Diff
       const example = currentFormat === Template.Format.Snippet ? SNIPPET_EXAMPLE : DIFF_EXAMPLE
       const substituted = await Template.substituteInputs(await Template.substitute(EDIT_TEMPLATE), {
         format: currentFormat,
@@ -167,17 +166,14 @@ export const EditTool = Tool.define("edit", {
       // Assemble prompt, injecting prior error if retrying
       const messages = [...systemMsgs, ...fileMessages]
       if (attempt > 1 && lastError) {
-        messages.push({ role: "user" as const, content: `Error:\n${lastError}` })
+        messages.push({ role: "user" as const, content: `Retry and avoid diagnostic error:\n${lastError}` })
       }
       messages.push(finalUser)
 
       // Update status: calling model
       ctx.metadata({
         metadata: {
-          status: `Calling AI model (attempt ${attempt}/${MAX_RETRIES})`,
-          filePath: filePath,
-          attempt: attempt,
-          maxRetries: MAX_RETRIES,
+          status: `Calling edit model`,
         },
       })
 
@@ -195,18 +191,16 @@ export const EditTool = Tool.define("edit", {
         throw new Error(`Edit model call failed: ${err?.message || String(err)}`)
       }
 
+      const editOutput = editGen.text
+      const { output, code } = parseEditOutput(editOutput)
+      const preview = code.split("\n").slice(0, PREVIEW_LINES).join("\n").trim()
+
       // Update status: parsing output
       ctx.metadata({
         metadata: {
-          status: `Parsing model output (attempt ${attempt}/${MAX_RETRIES})`,
-          filePath: filePath,
-          attempt: attempt,
-          maxRetries: MAX_RETRIES,
+          status: `Parsing model output`,
         },
       })
-
-      const editOutput = editGen.text
-      const { summary, code } = parseEditOutput(editOutput)
 
       // Detect diff vs snippet for next iteration
       if (currentFormat != Template.Format.Diff) {
@@ -217,64 +211,68 @@ export const EditTool = Tool.define("edit", {
       // Update status: applying edit
       ctx.metadata({
         metadata: {
-          status: `Applying edit (attempt ${attempt}/${MAX_RETRIES})`,
-          filePath: filePath,
-          attempt: attempt,
-          maxRetries: MAX_RETRIES,
+          status: `Applying edit`,
+          format: currentFormat,
+          diff: preview,
         },
       })
 
       // Try to apply the edit and run diagnostics/write. If diagnostics indicate syntax errors,
       // allow another retry. Fail fast for other errors (including model failures inside apply).
-      try {
-        const applyAgent = await Agent.get("apply")
-        const hasApplyModel = applyAgent?.model !== undefined
+      const applyAgent = await Agent.get("apply")
+      const hasApplyModel = applyAgent?.model !== undefined
 
-        const { contentNew, diff } = hasApplyModel && currentFormat === Template.Format.Snippet
-          ? await applyEditOutput(code, summary, ctx, filePath, contentOld)
+      const { contentNew, diff } =
+        hasApplyModel && currentFormat === Template.Format.Snippet
+          ? await applyEditOutput(code, output, ctx, filePath, contentOld)
           : await diffEditOutput(code, filePath, contentOld)
 
-        if (contentNew === contentOld) {
-          lastError = currentFormat === Template.Format.Snippet 
-            ? "Apply model failed to integrate the snippet" 
-            : "Diff did not result in any changes"
-          continue
-        }
+      outputDiff = diff || outputDiff
 
-        // Update status: running diagnostics
+      if (contentOld.trimEnd() === contentNew.trimEnd()) {
+        lastError =
+          currentFormat === Template.Format.Snippet
+            ? "Apply model failed to integrate the snippet"
+            : "Diff did not result in any changes"
         ctx.metadata({
           metadata: {
-            status: "Running diagnostics and writing file",
-            filePath: filePath,
+            status: "Apply failed",
+            error: lastError,
           },
         })
+        continue
+      }
 
-        // This may throw a syntax-related exception; if so, retry.
-        const { diagnostics } = await handleDiagnosticsAndFileWrite(filePath, contentNew, {
-          ctx,
-          diff,
-          type: "edit",
-        })
+      // This may throw a syntax-related exception; if so, retry.
+      const { diagnostics, absolutePath } = await handleDiagnosticsAndFileWrite(filePath, contentNew, {
+        ctx,
+        diff,
+        type: "edit",
+      })
 
-        return {
-          metadata: {
-            diagnostics,
-            diff: diff,
-          },
-          output: summary || "Edit applied successfully",
+      // Only block write if there are diagnostics for the target file
+      if (diagnostics[absolutePath] && diagnostics[absolutePath].length > 0) {
+        if (attempt >= MAX_RETRIES) {
+          throw new Error(`Changes not applied due to persistent diagnostic errors:\n${Object.values(diagnostics).flat().map(LSP.Diagnostic.pretty).join("\n")}`)
         }
-      } catch (err: any) {
-        // Retry only for the SyntaxErrorAfterEdit thrown by handleDiagnosticsAndFileWrite
-        if (err instanceof SyntaxErrorAfterEdit) {
-          lastError = err.message
-          // on last attempt we'll return the diagnostics captured from the exception
-          continue
-        }
-        // For any other error (including model/apply failures), fail fast
-        throw err
+        lastError = `Changes would introduce diagnostic errors:\n${Object.values(diagnostics).flat().map(LSP.Diagnostic.pretty).join("\n")}`
+      } else {
+        // Success!
+        summary = output || "Edit applied successfully"
+        lastError = ""
+        break
       }
     }
 
-    throw new Error("Too many failed edit attempts: " + lastError)
+    return {
+        title: `Edited ${path.relative(Instance.directory, filePath)}`,
+        metadata: {
+          diagnostics: {},
+          format: "diff",
+          diff: outputDiff,
+          error: lastError,
+        },
+        output: summary,
+      }
   },
 })
