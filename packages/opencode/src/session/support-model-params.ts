@@ -95,7 +95,7 @@ export async function buildSupportModelParams(
     params: {
       model: modelInfo.language,
       temperature: modelInfo.info.temperature
-        ? useSupportAgent?.temperature ?? ProviderTransform.temperature(modelInfo.providerID, modelInfo.modelID)
+        ? (useSupportAgent?.temperature ?? ProviderTransform.temperature(modelInfo.providerID, modelInfo.modelID))
         : undefined,
       topP: useSupportAgent?.topP ?? ProviderTransform.topP(modelInfo.providerID, modelInfo.modelID),
       providerOptions: {

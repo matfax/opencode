@@ -56,10 +56,7 @@ async function handleAgenticMode(params: any, ctx: any) {
     const gen = await generateText({
       ...supportParams,
       maxRetries: 3,
-      messages: [
-        { role: "system", content: prompt },
-        ...convo
-      ]
+      messages: [{ role: "system", content: prompt }, ...convo],
     })
     const assistant = gen.text.trim()
     const done = assistant.toLowerCase().includes("done") || assistant.toLowerCase().includes("complete")

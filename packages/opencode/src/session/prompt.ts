@@ -347,7 +347,12 @@ export namespace SessionPrompt {
     }
   }
 
-  async function getMessages(input: { sessionID: string; model: ModelsDev.Model; providerID: string, agent: Agent.Info }) {
+  async function getMessages(input: {
+    sessionID: string
+    model: ModelsDev.Model
+    providerID: string
+    agent: Agent.Info
+  }) {
     let msgs = await Session.messages(input.sessionID).then(MessageV2.filterSummarized)
     const lastAssistant = msgs.findLast((msg) => msg.info.role === "assistant")
     if (
@@ -1770,12 +1775,11 @@ export namespace SessionPrompt {
         .length === 1
     if (!isFirst) return
 
-    const { params: supportParams, modelInfo, prompt } = await buildSupportModelParams(
-      "title",
-      input.agent.name,
-      PROMPT_TITLE,
-      input.session.id,
-    )
+    const {
+      params: supportParams,
+      modelInfo,
+      prompt,
+    } = await buildSupportModelParams("title", input.agent.name, PROMPT_TITLE, input.session.id)
 
     generateText({
       ...supportParams,

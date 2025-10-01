@@ -107,12 +107,11 @@ export namespace SessionCompaction {
 
     // Build support params once (handles model selection + option merging)
     // Use calling agent (primary) if provided, otherwise fall back to default model
-    const { params: supportParams, modelInfo, prompt } = await buildSupportModelParams(
-      "compact",
-      input.agent.name,
-      COMPACT_TEMPLATE,
-      input.sessionID,
-    )
+    const {
+      params: supportParams,
+      modelInfo,
+      prompt,
+    } = await buildSupportModelParams("compact", input.agent.name, COMPACT_TEMPLATE, input.sessionID)
 
     // Build system context once and reuse for message + LLM call
     const system = [
