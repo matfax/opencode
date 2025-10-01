@@ -14,7 +14,6 @@ import { Flag } from "../flag/flag"
 import { Token } from "../util/token"
 import { Log } from "../util/log"
 import { Agent } from "../agent/agent"
-import { Template } from "../util/template"
 import { buildSupportModelParams } from "./support-model-params"
 // Statically import the compact template (raw text)
 // @ts-ignore: allow importing .txt as raw string
@@ -111,6 +110,7 @@ export namespace SessionCompaction {
     const { params: supportParams, modelInfo, prompt } = await buildSupportModelParams(
       "compact",
       input.agent.name,
+      COMPACT_TEMPLATE,
       input.sessionID,
     )
 
@@ -144,13 +144,11 @@ export namespace SessionCompaction {
         created: Date.now(),
       },
     })) as MessageV2.Assistant
-    // Inline compaction logic: load agent config & template
-    // Load and substitute env/file placeholders in static template
-    const rawTmpl = prompt ?? (await Template.substitute(COMPACT_TEMPLATE))
+
     const convMsgs: ModelMessage[] = MessageV2.toModelMessage(toSummarize)
     // Build final messages: system context, conversation, then user instructions
     const systemMsgs: ModelMessage[] = system.map((text) => ({ role: "system", content: text }))
-    const userMsg: ModelMessage = { role: "user", content: rawTmpl }
+    const userMsg: ModelMessage = { role: "user", content: prompt }
     const generated = await generateText({
       ...supportParams,
       maxRetries: 10,

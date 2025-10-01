@@ -88,54 +88,6 @@ export namespace Template {
   }
 
   /**
-   * Load, substitute, parse, validate, and post-process a config file.
-   * Handles reading, {env:}/{file:} placeholders, JSONC, Zod, schema injection, and plugin resolution.
-   * @param filepath Path to config file
-   * @param schema Zod schema for validation
-   */
-  export async function loadConfig(filepath: string, schema: z.ZodTypeAny): Promise<any> {
-    // Read file text, return empty config if missing
-    let raw: string
-    try {
-      raw = await Bun.file(filepath).text()
-    } catch (err: any) {
-      if (err.code === "ENOENT") return {}
-      throw err
-    }
-    // Substitute {env:}/{file:}
-    const substituted = await substitute(raw, path.dirname(filepath))
-    // Parse JSONC and validate via Zod
-    const data: any = processConfig(substituted, schema, filepath)
-    // Inject schema field if absent
-    if (data.$schema == null) {
-      data.$schema = "https://opencode.ai/config.json"
-      await Bun.write(filepath, JSON.stringify(data, null, 2))
-    }
-    // Resolve plugin paths
-    if (Array.isArray(data.plugin)) {
-      data.plugin = data.plugin.map((p: any) => {
-        try {
-          return import.meta.resolve(p, filepath)
-        } catch {
-          return p
-        }
-      })
-    }
-    return data
-  }
-
-  /**
-   * Load and process template file with substitutions
-   */
-  export async function load(templatePath: string, basePath?: string): Promise<string> {
-    const resolvedPath = path.isAbsolute(templatePath)
-      ? templatePath
-      : path.resolve(basePath || Instance.directory, templatePath)
-    const template = await Bun.file(resolvedPath).text()
-    return substitute(template, basePath)
-  }
-
-  /**
    * Process input placeholders in template text
    */
   export async function substituteInputs(

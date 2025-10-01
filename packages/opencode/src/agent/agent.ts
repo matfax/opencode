@@ -171,7 +171,23 @@ export namespace Agent {
         mode: "support",
         builtIn: true,
       },
+      title: {
+        name: "title",
+        description: "Specialized agent for generating session titles",
+        prompt: "",
+        tools: {},
+        options: {},
+        permission: agentPermission,
+        mode: "support",
+        builtIn: true,
+      },
     }
+
+    // Configure title agent to use small_model if specified
+    if (cfg.small_model) {
+      result["title"].model = Provider.parseModel(cfg.small_model)
+    }
+
     for (const [key, value] of Object.entries(cfg.agent ?? {})) {
       if (value.disable) {
         delete result[key]

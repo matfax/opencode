@@ -96,11 +96,11 @@ export const MultiEditTool = Tool.define("multiedit", {
     const { params: supportParams, prompt } = await buildSupportModelParams(
       "edit",
       ctx.agent,
+      MULTIEDIT_TEMPLATE,
       ctx.sessionID,
       representativeFile,
     )
-    const baseTemplate = prompt ?? MULTIEDIT_TEMPLATE
-    const substituted = await Template.substituteInputs(await Template.substitute(baseTemplate), {
+    const substituted = await Template.substituteInputs(prompt, {
       format: format,
       example,
     })

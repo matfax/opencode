@@ -213,7 +213,14 @@ export type KeybindsConfig = {
 }
 
 export type AgentConfig = {
-  model?: string
+  model?:
+    | string
+    | {
+        default: string
+        overrides: {
+          [key: string]: string
+        }
+      }
   temperature?: number
   top_p?: number
   prompt?: string

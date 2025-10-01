@@ -613,7 +613,23 @@ export namespace Server {
         async (c) => {
           const id = c.req.valid("param").id
           const body = c.req.valid("json")
-          await SessionCompaction.run({ ...body, sessionID: id })
+          // Get agent info from the most recent assistant message's parts
+          const msgs = await Session.messages(id)
+          const lastAssistant = msgs.findLast((m) => m.info.role === "assistant")
+          if (!lastAssistant) {
+            throw new Error("No assistant message found in session")
+          }
+          // Find the agent part to get agent info
+          const agentPart = lastAssistant.parts.find((p) => p.type === "agent")
+          if (!agentPart || agentPart.type !== "agent") {
+            throw new Error("No agent information found in session")
+          }
+          // Get the full agent info from Agent registry
+          const agent = await Agent.get(agentPart.name)
+          if (!agent) {
+            throw new Error(`Agent ${agentPart.name} not found`)
+          }
+          await SessionCompaction.run({ ...body, sessionID: id, agent })
           return c.json(true)
         },
       )

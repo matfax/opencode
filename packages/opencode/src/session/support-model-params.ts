@@ -5,6 +5,7 @@ import { Template } from "../util/template"
 import { minimatch } from "minimatch"
 import path from "path"
 import { Instance } from "../project/instance"
+import PROMPT_ANTHROPIC_SPOOF from "./prompt/anthropic_spoof.txt"
 
 /**
  * Match a model for a file path based on glob patterns.
@@ -40,11 +41,13 @@ function matchModelForFile(
  *
  * Prompt handling:
  * - If support agent has custom prompt, loads and substitutes it
- * - Otherwise returns undefined, caller should use tool-specific fallback template
+ * - Otherwise uses the provided fallback template
+ * - Automatically prepends Anthropic spoof header for Anthropic providers
  */
 export async function buildSupportModelParams(
   supportAgentName: string,
   callingAgentName: string, // from ctx.agent
+  fallbackTemplate: string, // Fallback template if agent has no custom prompt
   sessionID?: string,
   filePath?: string, // Optional file path for glob-based model matching
 ) {
@@ -80,8 +83,12 @@ export async function buildSupportModelParams(
           })()
   }
 
-  // Load custom prompt if specified (prompt field is a file path)
-  const prompt = useSupportAgent?.prompt ? await Template.load(useSupportAgent.prompt) : undefined
+  // Determine winning template: custom agent prompt OR fallback
+  const basePrompt = Template.substitute(useSupportAgent?.prompt || fallbackTemplate)
+
+  // Inject Anthropic spoof header if provider is Anthropic
+  const header = modelInfo.providerID.includes("anthropic") ? PROMPT_ANTHROPIC_SPOOF.trim() + "\n\n" : ""
+  const prompt = header + basePrompt
 
   // Build params (exact same pattern as main prompt flow at prompt.ts:205-215)
   return {

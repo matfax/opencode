@@ -30,6 +30,7 @@ import { Plugin } from "../plugin"
 
 import PROMPT_PLAN from "../session/prompt/plan.txt"
 import BUILD_SWITCH from "../session/prompt/build-switch.txt"
+import PROMPT_TITLE from "../session/prompt/title.txt"
 import { ModelsDev } from "../provider/models"
 import { defer } from "../util/defer"
 import { mergeDeep, pipe } from "remeda"
@@ -48,6 +49,7 @@ import { ulid } from "ulid"
 import { spawn } from "child_process"
 import { Command } from "../command"
 import { $ } from "bun"
+import { buildSupportModelParams } from "./support-model-params"
 
 export namespace SessionPrompt {
   const log = Log.create({ service: "session.prompt" })
@@ -231,8 +233,7 @@ export namespace SessionPrompt {
           session,
           history: msgs,
           message: userMsg,
-          providerID: model.providerID,
-          modelID: model.info.id,
+          agent,
         })
       step++
       await processor.next()
@@ -1761,40 +1762,26 @@ export namespace SessionPrompt {
     session: Session.Info
     message: MessageV2.WithParts
     history: MessageV2.WithParts[]
-    providerID: string
-    modelID: string
+    agent: Agent.Info
   }) {
     if (input.session.parentID) return
     const isFirst =
       input.history.filter((m) => m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic))
         .length === 1
     if (!isFirst) return
-    const small =
-      (await Provider.getSmallModel(input.providerID)) ?? (await Provider.getModel(input.providerID, input.modelID))
-    const options = {
-      ...ProviderTransform.options(small.providerID, small.modelID, input.session.id),
-      ...small.info.options,
-    }
-    if (small.providerID === "openai" || small.modelID.includes("gpt-5")) {
-      options["reasoningEffort"] = "minimal"
-    }
-    if (small.providerID === "google") {
-      options["thinkingConfig"] = {
-        thinkingBudget: 0,
-      }
-    }
+
+    const { params: supportParams, modelInfo, prompt } = await buildSupportModelParams(
+      "title",
+      input.agent.name,
+      PROMPT_TITLE,
+      input.session.id,
+    )
+
     generateText({
-      maxOutputTokens: small.info.reasoning ? 1500 : 20,
-      providerOptions: {
-        [small.providerID]: options,
-      },
+      ...supportParams,
+      maxOutputTokens: modelInfo.info.reasoning ? 1500 : 20,
       messages: [
-        ...SystemPrompt.title(small.providerID).map(
-          (x): ModelMessage => ({
-            role: "system",
-            content: x,
-          }),
-        ),
+        { role: "system", content: prompt },
         ...MessageV2.toModelMessage([
           {
             info: {
@@ -1809,7 +1796,6 @@ export namespace SessionPrompt {
           },
         ]),
       ],
-      model: small.language,
     })
       .then((result) => {
         if (result.text)
@@ -1820,7 +1806,7 @@ export namespace SessionPrompt {
           })
       })
       .catch((error) => {
-        log.error("failed to generate title", { error, model: small.info.id })
+        log.error("failed to generate title", { error, modelID: modelInfo.info.id })
       })
   }
 }

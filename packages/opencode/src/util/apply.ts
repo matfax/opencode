@@ -202,6 +202,7 @@ export async function applyEditOutput(
   const { params: supportParams, modelInfo: modelInfo, prompt } = await buildSupportModelParams(
     "apply",
     ctx.agent,
+    "", // No template for apply agent, custom prompt optional
     ctx.sessionID,
     filePath,
   )
@@ -219,8 +220,7 @@ export async function applyEditOutput(
     contentNew = extractCodeFromMarkdown(gen.text)
   } else {
     // Path 2: Generic fallback (all other models)
-    const promptText = prompt ? prompt.trim() : ""
-    const instruction = promptText ? promptText + "\n\n" : ""
+    const instruction = prompt.length > 0 ? prompt.trim() + "\n\n" : ""
     const userContent = `${instruction}File: ${path.relative(Instance.directory, filePath)}\n\n--- ORIGINAL START ---\n${contentOld}\n--- ORIGINAL END ---\n\n--- CHANGES START ---\n${editOutput}\n--- CHANGES END ---`
     const gen = await generateText({
       ...supportParams,

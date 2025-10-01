@@ -15,7 +15,6 @@ import PROMPT_BEAST from "./prompt/beast.txt"
 import PROMPT_GEMINI from "./prompt/gemini.txt"
 import PROMPT_ANTHROPIC_SPOOF from "./prompt/anthropic_spoof.txt"
 import PROMPT_SUMMARIZE from "./prompt/summarize.txt"
-import PROMPT_TITLE from "./prompt/title.txt"
 import PROMPT_COPILOT from "./prompt/copilot.txt"
 
 export namespace SystemPrompt {
@@ -123,15 +122,6 @@ export namespace SystemPrompt {
         return [PROMPT_ANTHROPIC_SPOOF.trim(), PROMPT_SUMMARIZE]
       default:
         return [PROMPT_SUMMARIZE]
-    }
-  }
-
-  export function title(providerID: string) {
-    switch (providerID) {
-      case "anthropic":
-        return [PROMPT_ANTHROPIC_SPOOF.trim(), PROMPT_TITLE]
-      default:
-        return [PROMPT_TITLE]
     }
   }
 }
