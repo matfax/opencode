@@ -43,6 +43,7 @@ function matchModelForFile(
  * - If support agent has custom prompt, loads and substitutes it
  * - Otherwise uses the provided fallback template
  * - Automatically prepends Anthropic spoof header for Anthropic providers
+ * - Substitutes {env:} and {file:} patterns (NOT {input:} - caller must handle those)
  */
 export async function buildSupportModelParams(
   supportAgentName: string,
@@ -84,7 +85,7 @@ export async function buildSupportModelParams(
   }
 
   // Determine winning template: custom agent prompt OR fallback
-  const basePrompt = Template.substitute(useSupportAgent?.prompt || fallbackTemplate)
+  const basePrompt = await Template.substitute(useSupportAgent?.prompt || fallbackTemplate)
 
   // Inject Anthropic spoof header if provider is Anthropic
   const header = modelInfo.providerID.includes("anthropic") ? PROMPT_ANTHROPIC_SPOOF.trim() + "\n\n" : ""
