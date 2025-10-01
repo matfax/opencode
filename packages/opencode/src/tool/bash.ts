@@ -10,6 +10,7 @@ import { Instance } from "../project/instance"
 import { generateText } from "ai"
 import { BashPermissions } from "../util/bash-permissions"
 import { buildSupportModelParams } from "../session/support-model-params"
+import { Template } from "../util/template"
 
 const DEFAULT_LIMIT = 1_000
 const DEFAULT_TIMEOUT = 1 * 60 * 1000
@@ -17,6 +18,14 @@ const MAX_TIMEOUT = 10 * 60 * 1000
 const DEFAULT_EXPIRATION = 5
 const DEFAULT_MAX_ITERATIONS = 10
 const DEFAULT_CONSECUTIVE_FAILURES = 2
+
+function getBashInputs() {
+  return {
+    os: process.platform,
+    shell: process.env["SHELL"] || process.env["ComSpec"] || "unknown",
+    cwd: Instance.directory,
+  }
+}
 
 async function executeCommand(command: string, timeout: number, ctx: any, directory?: string) {
   const dir = directory ? directory : Instance.directory
@@ -32,6 +41,50 @@ async function executeCommand(command: string, timeout: number, ctx: any, direct
     proc.on("close", () => resolve())
   })
   return { output: out, exitCode: proc.exitCode || 0 }
+}
+
+async function summarizeOutput(
+  output: string,
+  limit: number,
+  autosummarize: boolean,
+  ctx: any,
+  context: { command?: string; description?: string },
+): Promise<{ output: string; summarized: boolean; originalLength: number }> {
+  const originalLength = output.length
+
+  if (output.length <= limit) {
+    return { output, summarized: false, originalLength }
+  }
+
+  if (!autosummarize) {
+    return {
+      output: output.slice(0, limit) + "\n\n(Output was truncated due to length limit)",
+      summarized: false,
+      originalLength,
+    }
+  }
+
+  const instr = context.description
+    ? `Please summarize the following command output that had the original intent: ${context.description}\n\nCommand: ${context.command}\nOutput:\n'''${output}'''`
+    : `Please summarize the following command output:\n\nCommand: ${context.command}\nOutput:\n'''${output}'''`
+
+  const { params: supportParams, prompt } = await buildSupportModelParams(
+    "bash-summary",
+    ctx.agent,
+    BASH_OUTPUT_SUMMARY_TEMPLATE,
+    ctx.sessionID,
+  )
+
+  const sum = await generateText({
+    ...supportParams,
+    maxRetries: 3,
+    messages: [
+      { role: "system", content: prompt },
+      { role: "user", content: instr },
+    ],
+  })
+
+  return { output: sum.text, summarized: true, originalLength }
 }
 
 async function handleAgenticMode(params: any, ctx: any) {
@@ -53,10 +106,11 @@ async function handleAgenticMode(params: any, ctx: any) {
       BASH_CONSTRUCT_TEMPLATE,
       ctx.sessionID,
     )
+    const substituted = await Template.substituteInputs(prompt, getBashInputs())
     const gen = await generateText({
       ...supportParams,
       maxRetries: 3,
-      messages: [{ role: "system", content: prompt }, ...convo],
+      messages: [{ role: "system", content: substituted }, ...convo],
     })
     const assistant = gen.text.trim()
     const done = assistant.toLowerCase().includes("done") || assistant.toLowerCase().includes("complete")
@@ -98,43 +152,21 @@ async function handleAgenticMode(params: any, ctx: any) {
     .join("\n---\n\n")
 
   const limit = params.limit ?? DEFAULT_LIMIT
-  let out = extended
-  let summarized = false
-
-  if (extended.length > limit) {
-    if (params.autosummarize) {
-      const instr = params.description
-        ? `Summarize the following multi-step agentic bash session. Include the intent, key commands, notable outputs, and overall status.\n\nIntent: ${params.description}\n\nTranscript:\n'''${extended}'''`
-        : `Summarize the following multi-step agentic bash session. Include key commands, notable outputs, and overall status.\n\nTranscript:\n'''${extended}'''`
-
-      const { params: supportParams, prompt } = await buildSupportModelParams(
-        "bash-summary",
-        ctx.agent,
-        BASH_OUTPUT_SUMMARY_TEMPLATE,
-        ctx.sessionID,
-      )
-      const sum = await generateText({
-        ...supportParams,
-        maxRetries: 3,
-        messages: [
-          { role: "system", content: prompt },
-          { role: "user", content: instr },
-        ],
-      })
-      out = sum.text
-      summarized = true
-    } else {
-      out = extended.slice(0, limit) + "\n\n(Output was truncated due to length limit)"
-    }
-  }
+  const summaryResult = await summarizeOutput(
+    extended,
+    limit,
+    params.autosummarize || false,
+    ctx,
+    { command: "multi-step agentic session", description: params.description },
+  )
 
   return {
     title: `Agentic execution (${steps.length} commands)`,
     metadata: {
       agenticMode: true,
       totalCommands: steps.length,
-      summarized,
-      originalLength: extended.length,
+      summarized: summaryResult.summarized,
+      originalLength: summaryResult.originalLength,
       results: steps.map((s) => ({
         command: s.command,
         output: s.output,
@@ -144,7 +176,7 @@ async function handleAgenticMode(params: any, ctx: any) {
         toolCall: { name: "execute", directory: Instance.directory },
       })),
     },
-    output: out,
+    output: summaryResult.output,
   }
 }
 
@@ -198,78 +230,41 @@ export const BashTool = Tool.define("bash", {
 
     await BashPermissions.checkCommand(cmd, ctx, { description: desc })
 
-    const proc = exec(cmd, { cwd: Instance.directory, signal: ctx.abort, timeout })
-    let out = ""
+    const res = await executeCommand(cmd, timeout, ctx)
 
-    ctx.metadata({ metadata: { output: "", description: desc } })
+    ctx.metadata({ metadata: { output: res.output, exit: res.exitCode, description: desc } })
 
-    proc.stdout?.on("data", (chunk) => {
-      out += chunk.toString()
-      ctx.metadata({ metadata: { output: out, description: desc } })
-    })
-    proc.stderr?.on("data", (chunk) => {
-      out += chunk.toString()
-      ctx.metadata({ metadata: { output: out, description: desc } })
-    })
-
-    await new Promise<void>((resolve) => {
-      proc.on("close", () => resolve())
-    })
-
-    ctx.metadata({ metadata: { output: out, exit: proc.exitCode, description: desc } })
-
-    let finalOut = out
-    let summarized = false
     const limit = params.limit ?? DEFAULT_LIMIT
-    if (out.length > limit) {
-      if (params.autosummarize) {
-        const instr = params.description
-          ? `Please summarize the following command output that had the original intent: ${params.description}\n\nCommand: ${cmd}\nOutput:\n'''${out}'''`
-          : `Please summarize the following command output:\n\nCommand: ${cmd}\nOutput:\n'''${out}'''`
-
-        const { params: supportParams, prompt } = await buildSupportModelParams(
-          "bash-summary",
-          ctx.agent,
-          BASH_OUTPUT_SUMMARY_TEMPLATE,
-          ctx.sessionID,
-        )
-        const sum = await generateText({
-          ...supportParams,
-          maxRetries: 3,
-          messages: [
-            { role: "system", content: prompt },
-            { role: "user", content: instr },
-          ],
-        })
-        finalOut = sum.text
-        summarized = true
-      } else {
-        finalOut = out.slice(0, limit) + "\n\n(Output was truncated due to length limit)"
-      }
-    }
+    const summaryResult = await summarizeOutput(
+      res.output,
+      limit,
+      params.autosummarize || false,
+      ctx,
+      { command: cmd, description: desc },
+    )
 
     return {
       title: cmd,
       metadata: {
-        output: finalOut,
-        exit: proc.exitCode,
+        output: summaryResult.output,
+        exit: res.exitCode,
         description: desc,
-        summarized,
-        originalLength: out.length,
+        summarized: summaryResult.summarized,
+        originalLength: summaryResult.originalLength,
         agenticMode: false,
         totalCommands: 1,
         results: [
           {
             command: cmd,
-            output: finalOut,
-            exitCode: proc.exitCode || 0,
+            output: summaryResult.output,
+            exitCode: res.exitCode,
             description: desc,
             assistant: "",
             toolCall: { name: "execute", directory: Instance.directory },
           },
         ],
       },
-      output: finalOut,
+      output: summaryResult.output,
     }
   },
 })
