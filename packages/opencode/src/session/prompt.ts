@@ -1123,9 +1123,20 @@ export namespace SessionPrompt {
               case "tool-result": {
                 const match = toolcalls[value.toolCallId]
                 if (match && match.state.status === "running") {
+                  // Refetch the latest part state to get any metadata updates made during execution
+                  const msgs = await Session.messages(match.sessionID)
+                  let currentMetadata = match.state.metadata || {}
+                  for (const m of msgs) {
+                    const currentPart = m.parts.find((p) => p.id === match.id)
+                    if (currentPart && currentPart.type === "tool") {
+                      currentMetadata = currentPart.state.metadata || {}
+                      break
+                    }
+                  }
+
                   // supersede logic: compute key if tool had one
                   // Preserve running state metadata by merging with output metadata
-                  let metadata: Record<string, any> = mergeDeep(match.state.metadata || {}, value.output.metadata || {})
+                  let metadata: Record<string, any> = mergeDeep(currentMetadata, value.output.metadata || {})
                   const metaFns = toolMeta[match.tool]
                   let key: string | undefined
                   if (metaFns?.key) {
