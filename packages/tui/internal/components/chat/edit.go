@@ -32,31 +32,26 @@ func editSections(metadata map[string]any, toolCall opencode.ToolPart, width int
 	t := theme.CurrentTheme()
 	backgroundColor := t.BackgroundPanel()
 
-	// Preview section
+	// Preview section - always show diff when available
 	if diffContent != "" && toolCall.State.Status != opencode.ToolPartStateStatusError {
 		var preview string
-		if format == "diff" {
-			var formattedDiff string
-			if width < 120 {
-				formattedDiff, _ = diff.FormatUnifiedDiff(
-					filename,
-					diffContent,
-					diff.WithWidth(width-2),
-				)
-			} else {
-				formattedDiff, _ = diff.FormatDiff(
-					filename,
-					diffContent,
-					diff.WithWidth(width-2),
-				)
-			}
-			codeBlock := fmt.Sprintf("```diff\n%s```", strings.TrimSpace(formattedDiff))
-			preview = util.ToMarkdown(codeBlock, width, backgroundColor)
+		// Always render as diff, regardless of format
+		var formattedDiff string
+		if width < 120 {
+			formattedDiff, _ = diff.FormatUnifiedDiff(
+				filename,
+				diffContent,
+				diff.WithWidth(width-2),
+			)
 		} else {
-			// Render snippet with simple code block
-			codeBlock := fmt.Sprintf("```%s```", diffContent)
-			preview = util.ToMarkdown(codeBlock, width, backgroundColor)
+			formattedDiff, _ = diff.FormatDiff(
+				filename,
+				diffContent,
+				diff.WithWidth(width-2),
+			)
 		}
+		codeBlock := fmt.Sprintf("```diff\n%s```", strings.TrimSpace(formattedDiff))
+		preview = util.ToMarkdown(codeBlock, width, backgroundColor)
 
 		if previewLimit > 0 {
 			preview = util.TruncateHeight(preview, previewLimit)
@@ -65,9 +60,6 @@ func editSections(metadata map[string]any, toolCall opencode.ToolPart, width int
 		if preview != "" {
 			previewStyle := styles.NewStyle().
 				Background(backgroundColor)
-			if format != "diff" {
-				previewStyle = previewStyle.Padding(0, 2)
-			}
 			sections = append(sections, previewStyle.Render(preview))
 		}
 	}

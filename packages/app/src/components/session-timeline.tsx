@@ -130,6 +130,7 @@ function EditToolPart(props: { part: ToolPart }) {
               </>
             }
           >
+            {/* Always render as diff */}
             <Code
               path={state().input["filePath"] as string}
               code={state().metadata["diff"] as string}

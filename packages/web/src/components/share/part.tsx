@@ -604,24 +604,12 @@ export function EditTool(props: ToolProps) {
         </div>
       </Show>
 
-      {/* Preview snippet/diff (dynamic format switching) */}
+      {/* Preview diff - always show as diff when available */}
       <Show when={!isError() && !!props.state.metadata?.diff}>
         <div data-component="tool-preview">
-          <Switch>
-            {/* Render diff view for "diff" format */}
-            <Match when={format() === "diff"}>
-              <div data-component="diff">
-                <ContentDiff diff={props.state.metadata?.diff} lang={getShikiLang(filePath() || "")} />
-              </div>
-            </Match>
-
-            {/* Render code snippet for "snippet" format */}
-            <Match when={format() === "snippet"}>
-              <div data-component="snippet">
-                <ContentCode code={props.state.metadata?.diff} lang={getShikiLang(filePath() || "")} />
-              </div>
-            </Match>
-          </Switch>
+          <div data-component="diff">
+            <ContentDiff diff={props.state.metadata?.diff} lang={getShikiLang(filePath() || "")} />
+          </div>
         </div>
       </Show>
 

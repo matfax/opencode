@@ -67,6 +67,10 @@ function createEditAgentTools(
     ignoreChecks: z.boolean().optional().describe("Skip validation that predict was called successfully (dangerous - only use if you know what you're doing)"),
   })
 
+  const rejectEditSchema = z.object({
+    reason: z.string().describe("Detailed explanation of why the instructions are wrong, incomplete, or cannot be executed"),
+  })
+
   return {
     predict: tool({
       description: "Predict the result of an edit (snippet or diff) by applying it to the original file content and checking LSP diagnostics",
@@ -90,6 +94,13 @@ function createEditAgentTools(
               ? await applyEditOutput(code, instruction || "Apply the provided changes", ctx, filePath, contentOld)
               : await diffEditOutput(code, filePath, contentOld)
 
+          // Publish diff as soon as it's available
+          ctx.metadata({
+            metadata: {
+              diff: diff || "",
+            },
+          })
+
           // Check if any changes occurred
           if (contentOld.trimEnd() === contentNew.trimEnd()) {
             return {
@@ -110,10 +121,9 @@ function createEditAgentTools(
           })
 
           const absolutePath = path.resolve(filePath)
-          let diagnostics: any[]
+          let diagnosticsMap: Record<string, any[]>
           try {
-            const diagnosticsMap = await LSP.pushVirtualContent(absolutePath, contentNew)
-            diagnostics = diagnosticsMap[absolutePath] || []
+            diagnosticsMap = await LSP.pushVirtualContent(absolutePath, contentNew)
             // Revert virtual content immediately after checking
             try {
               await LSP.revertVirtualContent(absolutePath)
@@ -129,13 +139,29 @@ function createEditAgentTools(
             }
           }
 
-          // If there are diagnostics, return them as errors for the model to see
-          if (diagnostics.length > 0) {
-            const diagnosticMessages = diagnostics.map(LSP.Diagnostic.pretty).join("\n")
+          // Publish all diagnostics (for all files) to metadata
+          ctx.metadata({
+            metadata: {
+              diagnostics: diagnosticsMap,
+            },
+          })
+
+          // Only fail if the TARGET file has diagnostic errors
+          const targetFileDiagnostics = diagnosticsMap[absolutePath] || []
+          if (targetFileDiagnostics.length > 0) {
+            const diagnosticMessages = targetFileDiagnostics.map(LSP.Diagnostic.pretty).join("\n")
+
+            // Inform model about all affected files
+            const allAffectedFiles = Object.keys(diagnosticsMap).filter(f => diagnosticsMap[f].length > 0)
+            const otherFiles = allAffectedFiles.filter(f => f !== absolutePath)
+            const errorMessage = otherFiles.length > 0
+              ? `Changes would introduce diagnostic errors in target file:\n${diagnosticMessages}\n\nNote: Changes also affected other files (${otherFiles.join(", ")}), but these won't block the edit.`
+              : `Changes would introduce diagnostic errors:\n${diagnosticMessages}`
+
             return {
               success: false,
-              error: `Changes would introduce diagnostic errors:\n${diagnosticMessages}`,
-              diagnostics: diagnostics.map(LSP.Diagnostic.pretty),
+              error: errorMessage,
+              diagnostics: targetFileDiagnostics.map(LSP.Diagnostic.pretty),
             }
           }
 
@@ -172,7 +198,7 @@ function createEditAgentTools(
 
           ctx.metadata({
             metadata: {
-              status: "Finalizing edit - checking permissions and writing",
+              status: "Finalizing edit",
             },
           })
 
@@ -198,6 +224,13 @@ function createEditAgentTools(
           }
           throw err
         }
+      },
+    }),
+    reject: tool({
+      description: "Reject the edit request if the instructions are wrong, incomplete, ambiguous, or cannot be executed properly",
+      inputSchema: jsonSchema(z.toJSONSchema(rejectEditSchema) as any),
+      execute: async ({ reason }: z.infer<typeof rejectEditSchema>): Promise<{ rejected: true; reason: string }> => {
+        throw new Error(`Edit rejected: ${reason}`)
       },
     }),
   }
@@ -298,7 +331,6 @@ export const EditTool = Tool.define("edit", {
     ctx.metadata({
       metadata: {
         status: "Preparing agentic edit prompt",
-        maxRetries: MAX_RETRIES,
       },
     })
 
@@ -360,6 +392,13 @@ export const EditTool = Tool.define("edit", {
             summary = result.summary || "Edit applied successfully"
             outputDiff = result.diff || ""
             finalized = true
+
+            // Publish final clean state after successful write
+            ctx.metadata({
+              metadata: {
+                error: "",
+              },
+            })
           } else if (chunk.toolName === "predict") {
             const result = typeof chunk.output === "string" ? JSON.parse(chunk.output) : chunk.output
             if (!result.success) {
