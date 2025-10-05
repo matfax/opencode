@@ -7,18 +7,14 @@ import z from "zod/v4"
 import * as path from "path"
 import { Tool } from "./tool"
 import DESCRIPTION from "./edit.txt"
-// Statically import template + examples
+// Statically import template
 // @ts-ignore
 import EDIT_TEMPLATE from "./support/edit.txt"
-// @ts-ignore
-import SNIPPET_EXAMPLE from "./support/snippet.txt"
-// @ts-ignore
-import DIFF_EXAMPLE from "./support/diff.txt"
 import { Filesystem } from "../util/filesystem"
 import { Instance } from "../project/instance"
 import { Agent } from "../agent/agent"
 import { Template } from "../util/template"
-import { generateText } from "ai"
+import { streamText, tool, jsonSchema, stepCountIs, type Tool as AITool } from "ai"
 // Shared apply & utility functions
 import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite } from "../util/apply"
 import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../util/extract"
@@ -32,6 +28,7 @@ export { replace } from "../util/apply"
 declare const Bun: any
 
 // Adapter to keep existing variable names when switching to shared parser
+// @ts-ignore - kept for potential future non-agentic fallback
 function parseEditOutput(output: string): { output: string; code: string } {
   const { report, codePart } = parseReportAndCodeSections(output)
   if (!report && !codePart) {
@@ -50,6 +47,161 @@ function parseEditOutput(output: string): { output: string; code: string } {
 // Add retry configuration
 const MAX_RETRIES = 5
 const PREVIEW_LINES = 20
+
+// Define agentic tools for the edit model
+function createEditAgentTools(
+  contentOld: string,
+  filePath: string,
+  ctx: Tool.Context<any>,
+  hasApplyModel: boolean,
+  currentFormatRef: { format: Template.Format },
+  lastSuccessfulEditRef: { content: string; diff: string; summary: string }
+): Record<string, AITool> {
+  const predictEditSchema = z.object({
+    code: z.string().describe("The edit code (snippet or unified diff format)"),
+    instruction: z.string().optional().describe("1-sentence instruction guiding the apply model how to integrate the changes (only used for Snippet format)"),
+  })
+
+  const writeEditSchema = z.object({
+    summary: z.string().describe("Summary of changes made"),
+    ignoreChecks: z.boolean().optional().describe("Skip validation that predict was called successfully (dangerous - only use if you know what you're doing)"),
+  })
+
+  return {
+    predict: tool({
+      description: "Predict the result of an edit (snippet or diff) by applying it to the original file content and checking LSP diagnostics",
+      inputSchema: jsonSchema(z.toJSONSchema(predictEditSchema) as any),
+      execute: async ({ code, instruction }: z.infer<typeof predictEditSchema>) => {
+        try {
+          // Detect format
+          const looksLikeDiff = /^\s*(diff\s|@@)/m.test(code)
+          currentFormatRef.format = looksLikeDiff ? Template.Format.Diff : Template.Format.Snippet
+
+          ctx.metadata({
+            metadata: {
+              status: "Applying edit",
+              format: currentFormatRef.format,
+            },
+          })
+
+          // Apply the edit
+          const { contentNew, diff } =
+            hasApplyModel && currentFormatRef.format === Template.Format.Snippet
+              ? await applyEditOutput(code, instruction || "Apply the provided changes", ctx, filePath, contentOld)
+              : await diffEditOutput(code, filePath, contentOld)
+
+          // Check if any changes occurred
+          if (contentOld.trimEnd() === contentNew.trimEnd()) {
+            return {
+              success: false,
+              error:
+                currentFormatRef.format === Template.Format.Snippet
+                  ? "Apply model failed to integrate the snippet - no changes resulted"
+                  : "Diff did not result in any changes",
+              diagnostics: [],
+            }
+          }
+
+          // Run LSP diagnostics check on the new content
+          ctx.metadata({
+            metadata: {
+              status: "Running LSP diagnostics on applied edit",
+            },
+          })
+
+          const absolutePath = path.resolve(filePath)
+          let diagnostics: any[]
+          try {
+            const diagnosticsMap = await LSP.pushVirtualContent(absolutePath, contentNew)
+            diagnostics = diagnosticsMap[absolutePath] || []
+            // Revert virtual content immediately after checking
+            try {
+              await LSP.revertVirtualContent(absolutePath)
+            } catch {}
+          } catch (err) {
+            try {
+              await LSP.revertVirtualContent(absolutePath)
+            } catch {}
+            return {
+              success: false,
+              error: `LSP check failed: ${err instanceof Error ? err.message : String(err)}`,
+              diagnostics: [],
+            }
+          }
+
+          // If there are diagnostics, return them as errors for the model to see
+          if (diagnostics.length > 0) {
+            const diagnosticMessages = diagnostics.map(LSP.Diagnostic.pretty).join("\n")
+            return {
+              success: false,
+              error: `Changes would introduce diagnostic errors:\n${diagnosticMessages}`,
+              diagnostics: diagnostics.map(LSP.Diagnostic.pretty),
+            }
+          }
+
+          // Store successful edit for finalization
+          lastSuccessfulEditRef.content = contentNew
+          lastSuccessfulEditRef.diff = diff || ""
+          lastSuccessfulEditRef.summary = instruction || "Edit applied"
+
+          return {
+            success: true,
+            error: undefined,
+            diagnostics: [],
+          }
+        } catch (err: any) {
+          return {
+            success: false,
+            error: err?.message || String(err),
+            diagnostics: [],
+          }
+        }
+      },
+    }),
+    write: tool({
+      description: "Write the last successful predict result to disk after permission checks. Only call this after predict returns success=true with no diagnostics.",
+      inputSchema: jsonSchema(z.toJSONSchema(writeEditSchema) as any),
+      execute: async ({ summary, ignoreChecks }: z.infer<typeof writeEditSchema>) => {
+        try {
+          if (!ignoreChecks && !lastSuccessfulEditRef.content) {
+            return {
+              success: false,
+              error: "No successful prediction to write. Call predict first and ensure it succeeds.",
+            }
+          }
+
+          ctx.metadata({
+            metadata: {
+              status: "Finalizing edit - checking permissions and writing",
+            },
+          })
+
+          // Write file with diagnostics and permission checks using the stored successful edit
+          const result = await handleDiagnosticsAndFileWrite(filePath, lastSuccessfulEditRef.content, {
+            ctx,
+            diff: lastSuccessfulEditRef.diff,
+            type: "edit",
+          })
+
+          return {
+            success: true,
+            summary: summary || lastSuccessfulEditRef.summary,
+            diff: result.diff,
+          }
+        } catch (err: any) {
+          // Handle permission rejections and other errors
+          if (err instanceof Permission.RejectedSyntaxError || err instanceof Permission.RejectedApproachError) {
+            return {
+              success: false,
+              error: err.message,
+            }
+          }
+          throw err
+        }
+      },
+    }),
+  }
+}
 
 export const EditTool = Tool.define("edit", {
   description: DESCRIPTION,
@@ -132,142 +284,106 @@ export const EditTool = Tool.define("edit", {
     }
     const finalUser = { role: "user" as const, content: `## Instructions\n${params.instructions}` }
 
-    // Retry loop that covers generation, application, and diagnostics write.
-    let lastError = ""
+    // Agentic tool-calling flow: model reviews and corrects its own output
     let summary = ""
     let outputDiff = ""
+    let attempt = 1
+    const currentFormatRef = { format: currentFormat }
+    const lastSuccessfulEditRef = { content: "", diff: "", summary: "" }
 
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      // Update status: preparing prompt
-      ctx.metadata({
-        metadata: {
-          status: `Preparing prompt`,
-          attempt,
-        },
-      })
+    // Create tools for the edit agent
+    const editTools = createEditAgentTools(contentOld, filePath, ctx, hasApplyModel, currentFormatRef, lastSuccessfulEditRef)
 
-      // Build system messages for this format
-      currentFormat = attempt <= 2 ? currentFormat : Template.Format.Diff
-      const example = currentFormat === Template.Format.Snippet ? SNIPPET_EXAMPLE : DIFF_EXAMPLE
-      const { params: supportParams, prompt } = await buildSupportModelParams(
-        "edit",
-        ctx.agent,
-        EDIT_TEMPLATE,
-        ctx.sessionID,
-        filePath,
-      )
-      const substituted = await Template.substituteInputs(prompt, {
-        format: currentFormat,
-        example,
-      })
-      const systemLines = substituted.split(/\n+/).filter((l) => l.trim().length > 0)
-      const systemMsgs = systemLines.map((l) => ({ role: "system" as const, content: l }))
+    // Update status: preparing agentic prompt
+    ctx.metadata({
+      metadata: {
+        status: "Preparing agentic edit prompt",
+        maxRetries: MAX_RETRIES,
+      },
+    })
 
-      // Assemble prompt, injecting prior error if retrying
-      const messages = [...systemMsgs, ...fileMessages]
-      if (attempt > 1 && lastError) {
-        messages.push({ role: "user" as const, content: `Retry and avoid diagnostic error:\n${lastError}` })
-      }
-      messages.push(finalUser)
+    // Build system prompt using the template
+    const { params: supportParams, systemMessages } = await buildSupportModelParams(
+      "edit",
+      ctx.agent,
+      EDIT_TEMPLATE,
+      ctx.sessionID,
+      filePath,
+    )
 
-      // Update status: calling model
-      ctx.metadata({
-        metadata: {
-          status: `Calling edit model`,
-        },
-      })
+    // Substitute {input:format} in the last system message (main prompt, not spoof header)
+    const formatName = currentFormat === Template.Format.Snippet ? "Snippet" : "Diff"
+    const substitutedSystemMessages = await Promise.all(
+      systemMessages.map(async (msg, idx) => ({
+        role: "system" as const,
+        content: idx === systemMessages.length - 1
+          ? await Template.substituteInputs(msg, { format: formatName })
+          : msg
+      }))
+    )
 
-      // Call LLM once per attempt. Fail fast if the model call itself fails.
-      let editGen
-      try {
-        editGen = await generateText({
-          ...supportParams,
-          maxRetries: 0,
-          messages,
-        })
-      } catch (err: any) {
-        // Fail fast on model errors (do not retry)
-        throw new Error(`Edit model call failed: ${err?.message || String(err)}`)
-      }
+    // Assemble messages
+    const messages = [
+      ...substitutedSystemMessages,
+      ...fileMessages,
+      finalUser,
+    ]
 
-      const editOutput = editGen.text
-      const { output, code } = parseEditOutput(editOutput)
-      const preview = code.split("\n").slice(0, PREVIEW_LINES).join("\n").trim()
+    // Update status: calling agentic edit model
+    ctx.metadata({
+      metadata: {
+        status: "Calling agentic edit model with tools",
+      },
+    })
 
-      // Update status: parsing output
-      ctx.metadata({
-        metadata: {
-          status: `Parsing model output`,
-        },
-      })
+    // Call model with tools (agentic mode) using streamText for better control
+    const stream = streamText({
+      ...supportParams,
+      maxRetries: 0,
+      messages,
+      tools: editTools,
+      stopWhen: stepCountIs(Math.max(MAX_RETRIES + 1, 2)),
+    })
 
-      // Detect diff vs snippet for next iteration
-      if (currentFormat != Template.Format.Diff) {
-        const looksLikeDiff = /^\s*(diff\s|@@)/m.test(code)
-        currentFormat = looksLikeDiff ? Template.Format.Diff : Template.Format.Snippet
-      }
+    // Process stream to collect tool results
+    let finalized = false
+    let lastApplyError: string | undefined
 
-      // Update status: applying edit
-      ctx.metadata({
-        metadata: {
-          status: `Applying edit`,
-          format: currentFormat,
-          diff: preview,
-        },
-      })
-
-      const { contentNew, diff } =
-        hasApplyModel && currentFormat === Template.Format.Snippet
-          ? await applyEditOutput(code, output, ctx, filePath, contentOld)
-          : await diffEditOutput(code, filePath, contentOld)
-
-      outputDiff = diff || outputDiff
-
-      if (contentOld.trimEnd() === contentNew.trimEnd()) {
-        lastError =
-          currentFormat === Template.Format.Snippet
-            ? "Apply model failed to integrate the snippet"
-            : "Diff did not result in any changes"
-        ctx.metadata({
-          metadata: {
-            status: "Apply failed",
-            error: lastError,
-          },
-        })
-        continue
-      }
-
-      // This may throw a syntax-related exception or user rejection; if so, retry.
-      try {
-        const { diagnostics, absolutePath } = await handleDiagnosticsAndFileWrite(filePath, contentNew, {
-          ctx,
-          diff,
-          type: "edit",
-        })
-
-        // Only block write if there are diagnostics for the target file
-        if (diagnostics[absolutePath] && diagnostics[absolutePath].length > 0) {
-          if (attempt >= MAX_RETRIES) {
-            throw new Error(
-              `Changes not applied due to persistent diagnostic errors:\n${Object.values(diagnostics).flat().map(LSP.Diagnostic.pretty).join("\n")}`,
-            )
+    for await (const chunk of stream.fullStream) {
+      switch (chunk.type) {
+        case "tool-result":
+          if (chunk.toolName === "write") {
+            const result = typeof chunk.output === "string" ? JSON.parse(chunk.output) : chunk.output
+            if (!result.success) {
+              throw new Error(`Edit write failed: ${result.error}`)
+            }
+            summary = result.summary || "Edit applied successfully"
+            outputDiff = result.diff || ""
+            finalized = true
+          } else if (chunk.toolName === "predict") {
+            const result = typeof chunk.output === "string" ? JSON.parse(chunk.output) : chunk.output
+            if (!result.success) {
+              lastApplyError = result.error
+              attempt = Math.min(MAX_RETRIES, attempt + 1)
+              ctx.metadata({
+                metadata: {
+                  status: "Retrying edit after failed prediction",
+                  attempt,
+                  maxRetries: MAX_RETRIES,
+                  lastError: result.error,
+                },
+              })
+            }
           }
-          lastError = `Changes would introduce diagnostic errors:\n${Object.values(diagnostics).flat().map(LSP.Diagnostic.pretty).join("\n")}`
-        } else {
-          // Successful edit
-          summary = output || "Edit applied successfully"
-          lastError = ""
           break
-        }
-      } catch (err) {
-        if (attempt >= MAX_RETRIES) {
-          throw err
-        } else if (err instanceof Permission.RejectedSyntaxError || err instanceof Permission.RejectedApproachError) {
-          lastError = err.message
-        } else {
-          throw err
-        }
       }
+    }
+
+    if (!finalized) {
+      if (lastApplyError) {
+        throw new Error(`Edit failed: ${lastApplyError}`)
+      }
+      throw new Error("Edit model did not finalize the edit")
     }
 
     return {
@@ -276,7 +392,7 @@ export const EditTool = Tool.define("edit", {
         diagnostics: {},
         format: "diff",
         diff: outputDiff,
-        error: lastError,
+        error: "",
       },
       output: summary,
     }
