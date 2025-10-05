@@ -14,12 +14,8 @@ import (
 
 func editSections(metadata map[string]any, toolCall opencode.ToolPart, width int, filename string) []string {
 	var diffContent string
-	var format = "diff"
 	var previewLimit = 10
 
-	if val, ok := metadata["format"].(string); ok && val != "" {
-		format = val
-	}
 	if val, ok := metadata["diff"].(string); ok {
 		diffContent = val
 	}
