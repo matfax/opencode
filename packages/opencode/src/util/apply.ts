@@ -83,6 +83,14 @@ export async function handleDiagnosticsAndFileWrite(
     throw err
   }
 
+  // Always clear diagnostics first, then set new ones if any
+  ctx.metadata({
+    metadata: {
+      diagnostics: diagnostics,
+    },
+    clear: true,
+  })
+
   // Only block write if there are diagnostics for the target file
   if (diagnostics[absolutePath] && diagnostics[absolutePath].length > 0) {
     try {
@@ -90,7 +98,6 @@ export async function handleDiagnosticsAndFileWrite(
     } catch {}
     ctx.metadata({
       metadata: {
-        diagnostics: diagnostics,
         status: "Encountered diagnostic errors",
         error: "Diagnostic errors detected",
       },
@@ -100,10 +107,10 @@ export async function handleDiagnosticsAndFileWrite(
 
   ctx.metadata({
     metadata: {
-      diagnostics: diagnostics,
       status: "No diagnostic errors detected",
-      error: "", // Clear any previous error
+      error: "",
     },
+    clear: true,
   })
 
   let diff: string

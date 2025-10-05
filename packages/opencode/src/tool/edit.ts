@@ -94,11 +94,12 @@ function createEditAgentTools(
               ? await applyEditOutput(code, instruction || "Apply the provided changes", ctx, filePath, contentOld)
               : await diffEditOutput(code, filePath, contentOld)
 
-          // Publish diff as soon as it's available
+          // Clear old diff and publish new one
           ctx.metadata({
             metadata: {
               diff: diff || "",
             },
+            clear: true,
           })
 
           // Check if any changes occurred
@@ -139,11 +140,12 @@ function createEditAgentTools(
             }
           }
 
-          // Publish all diagnostics (for all files) to metadata
+          // Always clear diagnostics first, then set new ones if any
           ctx.metadata({
             metadata: {
               diagnostics: diagnosticsMap,
             },
+            clear: true,
           })
 
           // Only fail if the TARGET file has diagnostic errors
@@ -393,11 +395,12 @@ export const EditTool = Tool.define("edit", {
             outputDiff = result.diff || ""
             finalized = true
 
-            // Publish final clean state after successful write
+            // Clear error metadata since write succeeded
             ctx.metadata({
               metadata: {
                 error: "",
               },
+              clear: true,
             })
           } else if (chunk.toolName === "predict") {
             const result = typeof chunk.output === "string" ? JSON.parse(chunk.output) : chunk.output
@@ -409,7 +412,7 @@ export const EditTool = Tool.define("edit", {
                   status: "Retrying edit after failed prediction",
                   attempt,
                   maxRetries: MAX_RETRIES,
-                  lastError: result.error,
+                  error: result.error,
                 },
               })
             }
@@ -428,10 +431,8 @@ export const EditTool = Tool.define("edit", {
     return {
       title: `Edited ${path.relative(Instance.directory, filePath)}`,
       metadata: {
-        diagnostics: {},
         format: "diff",
         diff: outputDiff,
-        error: "",
       },
       output: summary,
     }

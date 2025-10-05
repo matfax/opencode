@@ -11,7 +11,7 @@ export namespace Tool {
     callID?: string
     abort: AbortSignal
     extra?: { [key: string]: any }
-    metadata(input: { title?: string; metadata?: M }): void
+    metadata(input: { title?: string; metadata?: M; clear?: boolean }): void
   }
   export interface Info<Parameters extends z.ZodType = z.ZodType, M extends Metadata = Metadata> {
     id: string

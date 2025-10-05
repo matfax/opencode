@@ -466,6 +466,14 @@ export namespace SessionPrompt {
               const match = input.processor.partFromToolCall(options.toolCallId)
               if (match) {
                 const prevMeta = match.state.metadata || {}
+
+                // If clear is true, delete the keys first
+                if (val.clear && val.metadata) {
+                  for (const key of Object.keys(val.metadata)) {
+                    delete prevMeta[key]
+                  }
+                }
+
                 const inputMeta = val.metadata || {}
                 const mergedMeta = mergeDeep(prevMeta, inputMeta)
 
@@ -1727,10 +1735,19 @@ export namespace SessionPrompt {
           agent: agent.name,
           messageID: assistantMsg.id,
           extra: {},
-          metadata: async (metadata) => {
+          metadata: async (input) => {
             if (toolPart.state.status === "running") {
-              toolPart.state.metadata = mergeDeep(toolPart.state.metadata || {}, metadata.metadata || {})
-              toolPart.state.title = metadata.title
+              const currentMetadata = toolPart.state.metadata || {}
+
+              // If clear is true, delete the keys first
+              if (input.clear && input.metadata) {
+                for (const key of Object.keys(input.metadata)) {
+                  delete currentMetadata[key]
+                }
+              }
+
+              toolPart.state.metadata = mergeDeep(currentMetadata, input.metadata || {})
+              toolPart.state.title = input.title
               await Session.updatePart(toolPart)
             }
           },
