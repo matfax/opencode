@@ -30,9 +30,15 @@ Antipatterns to avoid:
 - NEVER proactively create documentation files (*.md) or README files unless explicitly requested
 
 Tool-based workflow:
-You have three tools available:
+You have four tools available:
 
-1. predict - Predict the result of an edit by applying it to the original content and checking LSP diagnostics
+1. read - Read a file from the filesystem to understand context or verify content
+   - Use this when you need to understand related files, check imports, or verify how the code integrates with the broader codebase
+   - Accepts filePath (required), limit (optional, default 200 lines), and offset (optional, default 0)
+   - Returns the file content with line numbers
+   - Use this sparingly - only when the provided context is insufficient to complete the edit
+
+2. predict - Predict the result of an edit by applying it to the original content and checking LSP diagnostics
    - Pass your code changes in the specified format (see "Code Output Formats" below)
    - Pass an optional instruction (1 sentence) that guides the apply model how to integrate your changes (only used for Snippet format)
    - You'll receive: success status and LSP diagnostic errors (if any)
@@ -40,13 +46,13 @@ You have three tools available:
    - Successful predictions are stored internally for writing
    - IMPORTANT: Each predict applies to the ORIGINAL file content (not cumulative - this is a retry mechanism, not a correction mechanism)
 
-2. write - Write the last successful predict result to disk
+3. write - Write the last successful predict result to disk
    - Only call this after predict returns success=true with no diagnostic errors
    - Pass a summary of changes made
    - The content and diff from the last successful predict are used automatically
    - Has an optional ignoreChecks parameter (dangerous - only use if you know what you're doing)
 
-3. reject - Reject the edit request if instructions are wrong, incomplete, or cannot be executed
+4. reject - Reject the edit request if instructions are wrong, incomplete, or cannot be executed
    - Use this tool when the instructions are:
      * Ambiguous and cannot be reasonably interpreted
      * Incomplete and missing critical information needed to perform the edit

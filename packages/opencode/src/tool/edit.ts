@@ -21,6 +21,7 @@ import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../util/ext
 import { LSP } from "../lsp"
 import { Permission } from "../permission"
 import { buildSupportModelParams } from "../session/support-model-params"
+import { ReadTool } from "./read"
 // Re-export replace for existing tests that import from this module
 export { replace } from "../util/apply"
 
@@ -58,6 +59,38 @@ function createEditAgentTools(
   lastSuccessfulEditRef: { content: string; diff: string; summary: string }
 ): Record<string, AITool> {
   return {
+    read: tool({
+      description: "Read a file from the filesystem to understand context or verify content",
+      inputSchema: zodSchema(z.object({
+        filePath: z.string().describe("The absolute or relative path to the file to read"),
+        limit: z.number().optional().describe("The number of lines to read (default: 200)"),
+        offset: z.number().optional().describe("The line number to start reading from (0-based, default: 0)"),
+      })),
+      execute: async ({ filePath: targetPath, limit, offset }) => {
+        try {
+          const readTool = await ReadTool.init()
+          const result = await readTool.execute(
+            {
+              filePath: targetPath,
+              limit: limit ?? 200,
+              offset: offset ?? 0,
+              // Explicitly omit query to disable summarization
+            },
+            ctx
+          )
+          return {
+            success: true,
+            content: result.output,
+            totalLines: result.metadata.totalLines,
+          }
+        } catch (err: any) {
+          return {
+            success: false,
+            error: err?.message || String(err),
+          }
+        }
+      },
+    }),
     predict: tool({
       description: "Predict the result of an edit (snippet or diff) by applying it to the original file content and checking LSP diagnostics",
       inputSchema: zodSchema(z.object({
