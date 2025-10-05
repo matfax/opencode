@@ -6,7 +6,7 @@ import DESCRIPTION from "./bash.txt"
 // @ts-ignore
 import BASH_CONSTRUCT_TEMPLATE from "./support/bash.txt"
 import { Instance } from "../project/instance"
-import { streamText, tool, jsonSchema, stepCountIs, type Tool as AITool } from "ai"
+import { streamText, tool, zodSchema, stepCountIs, type Tool as AITool } from "ai"
 import { BashPermissions } from "../util/bash-permissions"
 import { buildSupportModelParams } from "../session/support-model-params"
 import { Template } from "../util/template"
@@ -133,16 +133,14 @@ async function executeCommand(command: string, timeout: number, ctx: any, limit:
 }
 
 function createBashExecuteTool(ctx: any, timeout: number, limit: number, state: { commandCount: number, maxCommands: number, maxFailuresReached: boolean }): AITool {
-  const schema = z.object({
-    command: z.string().describe("The CLI command to execute"),
-    timeout: z.number().optional().default(timeout).describe("Timeout for this command in milliseconds"),
-    limit: z.number().optional().default(limit).describe("Character limit that the output will be truncated to"),
-  })
-
   return tool({
     description: "Execute a CLI command and receive the output with the exit code",
-    inputSchema: jsonSchema(z.toJSONSchema(schema) as any),
-    async execute({ command, timeout: cmdTimeout, limit: cmdLimit }: z.infer<typeof schema>, _options: any) {
+    inputSchema: zodSchema(z.object({
+      command: z.string().describe("The CLI command to execute"),
+      timeout: z.number().optional().default(timeout).describe("Timeout for this command in milliseconds"),
+      limit: z.number().optional().default(limit).describe("Character limit that the output will be truncated to"),
+    })),
+    async execute({ command, timeout: cmdTimeout, limit: cmdLimit }) {
       // Check limits before executing
       if (state.commandCount >= state.maxCommands) {
         return JSON.stringify({

@@ -14,7 +14,7 @@ import { Filesystem } from "../util/filesystem"
 import { Instance } from "../project/instance"
 import { Agent } from "../agent/agent"
 import { Template } from "../util/template"
-import { streamText, tool, jsonSchema, stepCountIs, type Tool as AITool } from "ai"
+import { streamText, tool, zodSchema, stepCountIs, type Tool as AITool } from "ai"
 // Shared apply & utility functions
 import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite } from "../util/apply"
 import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../util/extract"
@@ -57,25 +57,14 @@ function createEditAgentTools(
   currentFormatRef: { format: Template.Format },
   lastSuccessfulEditRef: { content: string; diff: string; summary: string }
 ): Record<string, AITool> {
-  const predictEditSchema = z.object({
-    code: z.string().describe("The edit code (snippet or unified diff format)"),
-    instruction: z.string().optional().describe("1-sentence instruction guiding the apply model how to integrate the changes (only used for Snippet format)"),
-  })
-
-  const writeEditSchema = z.object({
-    summary: z.string().describe("Summary of changes made"),
-    ignoreChecks: z.boolean().optional().describe("Skip validation that predict was called successfully (dangerous - only use if you know what you're doing)"),
-  })
-
-  const rejectEditSchema = z.object({
-    reason: z.string().describe("Detailed explanation of why the instructions are wrong, incomplete, or cannot be executed"),
-  })
-
   return {
     predict: tool({
       description: "Predict the result of an edit (snippet or diff) by applying it to the original file content and checking LSP diagnostics",
-      inputSchema: jsonSchema(z.toJSONSchema(predictEditSchema) as any),
-      execute: async ({ code, instruction }: z.infer<typeof predictEditSchema>) => {
+      inputSchema: zodSchema(z.object({
+        code: z.string().describe("The edit code (snippet or unified diff format)"),
+        instruction: z.string().optional().describe("1-sentence instruction guiding the apply model how to integrate the changes (only used for Snippet format)"),
+      })),
+      execute: async ({ code, instruction }) => {
         try {
           // Detect format
           const looksLikeDiff = /^\s*(diff\s|@@)/m.test(code)
@@ -188,8 +177,11 @@ function createEditAgentTools(
     }),
     write: tool({
       description: "Write the last successful predict result to disk after permission checks. Only call this after predict returns success=true with no diagnostics.",
-      inputSchema: jsonSchema(z.toJSONSchema(writeEditSchema) as any),
-      execute: async ({ summary, ignoreChecks }: z.infer<typeof writeEditSchema>) => {
+      inputSchema: zodSchema(z.object({
+        summary: z.string().describe("Summary of changes made"),
+        ignoreChecks: z.boolean().optional().describe("Skip validation that predict was called successfully (dangerous - only use if you know what you're doing)"),
+      })),
+      execute: async ({ summary, ignoreChecks }) => {
         try {
           if (!ignoreChecks && !lastSuccessfulEditRef.content) {
             return {
@@ -230,8 +222,10 @@ function createEditAgentTools(
     }),
     reject: tool({
       description: "Reject the edit request if the instructions are wrong, incomplete, ambiguous, or cannot be executed properly",
-      inputSchema: jsonSchema(z.toJSONSchema(rejectEditSchema) as any),
-      execute: async ({ reason }: z.infer<typeof rejectEditSchema>): Promise<{ rejected: true; reason: string }> => {
+      inputSchema: zodSchema(z.object({
+        reason: z.string().describe("Detailed explanation of why the instructions are wrong, incomplete, or cannot be executed"),
+      })),
+      execute: async ({ reason }): Promise<{ rejected: true; reason: string }> => {
         throw new Error(`Edit rejected: ${reason}`)
       },
     }),
