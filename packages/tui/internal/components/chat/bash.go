@@ -88,6 +88,7 @@ func bashSections(metadata map[string]any, toolCall opencode.ToolPart, toolInput
 	}
 
 	// Display steps in order, interleaving commands and reasoning
+	commandIndex := 0
 	for _, step := range steps {
 		switch step.Type {
 		case "text-delta":
@@ -143,9 +144,10 @@ func bashSections(metadata map[string]any, toolCall opencode.ToolPart, toolInput
 					Render("[running...]"))
 		}
 
-		// Use unique zone ID based on message and part to avoid collisions with duplicate commands
-		zoneID := fmt.Sprintf("bash-cmd-%s-%d-%s", messageID, partIndex, cmd)
+		// Use unique zone ID based on message, part, and command index to avoid collisions with duplicate commands
+		zoneID := fmt.Sprintf("bash-cmd-%s-%d-%d", messageID, partIndex, commandIndex)
 		isExpanded := expandedCommands != nil && expandedCommands[zoneID]
+		commandIndex++
 
 		var commandSection string
 
