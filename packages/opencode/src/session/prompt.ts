@@ -471,7 +471,7 @@ export namespace SessionPrompt {
 
                 switch (match.state.status) {
                   case "running":
-                    await Session.updatePart({
+                    const updatedRunningPart = await Session.updatePart({
                       ...match,
                       state: {
                         title: val.title ?? match.state.title,
@@ -481,15 +481,17 @@ export namespace SessionPrompt {
                         time: match.state.time || Date.now(),
                       },
                     })
+                    input.processor.updateToolCall(options.toolCallId!, updatedRunningPart as MessageV2.ToolPart)
                     break
                   case "pending":
-                    await Session.updatePart({
+                    const updatedPendingPart = await Session.updatePart({
                       ...match,
                       state: {
                         metadata: mergedMeta,
                         status: "pending",
                       },
                     })
+                    input.processor.updateToolCall(options.toolCallId!, updatedPendingPart as MessageV2.ToolPart)
                     break
                 }
               }
@@ -1012,6 +1014,9 @@ export namespace SessionPrompt {
       partFromToolCall(toolCallID: string) {
         return toolcalls[toolCallID]
       },
+      updateToolCall(toolCallID: string, part: MessageV2.ToolPart) {
+        toolcalls[toolCallID] = part
+      },
       async process(stream: StreamTextResult<Record<string, AITool>, never>) {
         log.info("process")
         if (!assistantMsg) throw new Error("call next() first before processing")
@@ -1493,10 +1498,10 @@ export namespace SessionPrompt {
     proc.stdout?.on("data", (chunk) => {
       output += chunk.toString()
       if (part.state.status === "running") {
-        part.state.metadata = {
+        part.state.metadata = mergeDeep(part.state.metadata || {}, {
           output: output,
           description: "",
-        }
+        })
         Session.updatePart(part)
       }
     })
@@ -1504,10 +1509,10 @@ export namespace SessionPrompt {
     proc.stderr?.on("data", (chunk) => {
       output += chunk.toString()
       if (part.state.status === "running") {
-        part.state.metadata = {
+        part.state.metadata = mergeDeep(part.state.metadata || {}, {
           output: output,
           description: "",
-        }
+        })
         Session.updatePart(part)
       }
     })
@@ -1724,7 +1729,7 @@ export namespace SessionPrompt {
           extra: {},
           metadata: async (metadata) => {
             if (toolPart.state.status === "running") {
-              toolPart.state.metadata = metadata.metadata
+              toolPart.state.metadata = mergeDeep(toolPart.state.metadata || {}, metadata.metadata || {})
               toolPart.state.title = metadata.title
               await Session.updatePart(toolPart)
             }
