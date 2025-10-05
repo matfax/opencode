@@ -93,22 +93,23 @@ export const MultiEditTool = Tool.define("multiedit", {
     // System template reuse from single edit tool support examples
     // We keep it simple: instruct model to output angle sentinel sections
     const example = format === Template.Format.Snippet ? MULTISNIPPET_EXAMPLE : MULTIDIFF_EXAMPLE
-    const { params: supportParams, prompt } = await buildSupportModelParams(
+    const { params: supportParams, systemMessages } = await buildSupportModelParams(
       "edit",
       ctx.agent,
       MULTIEDIT_TEMPLATE,
       ctx.sessionID,
       representativeFile,
     )
-    const substituted = await Template.substituteInputs(prompt, {
-      format: format,
-      example,
-    })
-    const systemLines = substituted
-      .split(/\n+/)
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0)
-    const systemMsgs = systemLines.map((l) => ({ role: "system" as const, content: l }))
+
+    // Substitute {input:} patterns in the last system message (main prompt, not spoof header)
+    const systemMsgs = await Promise.all(
+      systemMessages.map(async (msg, idx) => ({
+        role: "system" as const,
+        content: idx === systemMessages.length - 1
+          ? await Template.substituteInputs(msg, { format, example })
+          : msg
+      }))
+    )
 
     const MAX_EXPANSION_ATTEMPTS = 3
     const MAX_CONTEXT_FILES = 30

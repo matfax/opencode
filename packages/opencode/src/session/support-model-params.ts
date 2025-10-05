@@ -5,7 +5,7 @@ import { Template } from "../util/template"
 import { minimatch } from "minimatch"
 import path from "path"
 import { Instance } from "../project/instance"
-import PROMPT_ANTHROPIC_SPOOF from "./prompt/anthropic_spoof.txt"
+import { SystemPrompt } from "./system"
 
 /**
  * Match a model for a file path based on glob patterns.
@@ -40,9 +40,10 @@ function matchModelForFile(
  * - options (reasoningEffort, thinking, etc.): ProviderTransform → model.info.options → agent.options
  *
  * Prompt handling:
- * - If support agent has custom prompt, loads and substitutes it
+ * - If support agent has custom prompt, uses it
  * - Otherwise uses the provided fallback template
- * - Automatically prepends Anthropic spoof header for Anthropic providers
+ * - Automatically prepends Anthropic spoof header for Anthropic providers via SystemPrompt.resolve()
+ * - Returns system messages as an array (2 messages for caching on Anthropic)
  * - Substitutes {env:} and {file:} patterns (NOT {input:} - caller must handle those)
  */
 export async function buildSupportModelParams(
@@ -85,11 +86,15 @@ export async function buildSupportModelParams(
   }
 
   // Determine winning template: custom agent prompt OR fallback
-  const basePrompt = await Template.substitute(useSupportAgent?.prompt || fallbackTemplate)
+  const basePrompt = useSupportAgent?.prompt || (await Template.substitute(fallbackTemplate))
 
-  // Inject Anthropic spoof header if provider is Anthropic
-  const header = modelInfo.providerID.includes("anthropic") ? PROMPT_ANTHROPIC_SPOOF.trim() + "\n\n" : ""
-  const prompt = header + basePrompt
+  // Build system messages using shared logic (handles Anthropic spoof header + caching structure)
+  const systemMessages = await SystemPrompt.resolve({
+    system: basePrompt,
+    agent: useSupportAgent || callingAgent,
+    providerID: modelInfo.providerID,
+    modelID: modelInfo.modelID,
+  })
 
   // Build params (exact same pattern as main prompt flow at prompt.ts:205-215)
   return {
@@ -108,6 +113,6 @@ export async function buildSupportModelParams(
       },
     },
     modelInfo,
-    prompt,
+    systemMessages,
   }
 }

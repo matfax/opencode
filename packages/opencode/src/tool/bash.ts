@@ -5,266 +5,383 @@ import { Tool } from "./tool"
 import DESCRIPTION from "./bash.txt"
 // @ts-ignore
 import BASH_CONSTRUCT_TEMPLATE from "./support/bash.txt"
-import BASH_OUTPUT_SUMMARY_TEMPLATE from "./support/bash-output-summary.txt"
 import { Instance } from "../project/instance"
-import { generateText } from "ai"
+import { streamText, tool, jsonSchema, stepCountIs, type Tool as AITool } from "ai"
 import { BashPermissions } from "../util/bash-permissions"
 import { buildSupportModelParams } from "../session/support-model-params"
 import { Template } from "../util/template"
 
-const DEFAULT_LIMIT = 1_000
+const DEFAULT_LIMIT = 5_000
 const DEFAULT_TIMEOUT = 1 * 60 * 1000
 const MAX_TIMEOUT = 10 * 60 * 1000
-const DEFAULT_EXPIRATION = 5
+const DEFAULT_EXPIRATION = 10
 const DEFAULT_MAX_ITERATIONS = 10
-const DEFAULT_CONSECUTIVE_FAILURES = 2
+const DEFAULT_CONSECUTIVE_FAILURES = 3
 
 function getBashInputs() {
+  // Detect shell: PowerShell on Windows, then fallback to SHELL or ComSpec
+  let shell = "unknown"
+  if (process.platform === "win32") {
+    // Check for PowerShell first (PSModulePath exists in PowerShell)
+    if (process.env["PSModulePath"]) {
+      shell = "PowerShell"
+    } else {
+      shell = process.env["ComSpec"] || "cmd.exe"
+    }
+  } else {
+    shell = process.env["SHELL"] || "sh"
+  }
+
   return {
     os: process.platform,
-    shell: process.env["SHELL"] || process.env["ComSpec"] || "unknown",
+    shell,
     cwd: Instance.directory,
   }
 }
 
-async function executeCommand(command: string, timeout: number, ctx: any, directory?: string) {
+function deduplicateLines(output: string): string {
+  const lines = output.split('\n')
+  const deduplicated: string[] = []
+  let currentLine = ''
+  let count = 0
+
+  const flush = () => {
+    if (currentLine !== '') {
+      deduplicated.push(count > 1 ? `${currentLine} (repeated ${count} times)` : currentLine)
+    }
+  }
+
+  for (const line of lines) {
+    if (line === currentLine) {
+      count++
+    } else {
+      flush()
+      currentLine = line
+      count = 1
+    }
+  }
+
+  flush()
+  return deduplicated.join('\n')
+}
+
+function truncateOutput(output: string, limit: number): string {
+  // First deduplicate lines
+  const deduplicated = deduplicateLines(output)
+
+  if (deduplicated.length <= limit)
+    return deduplicated
+
+  const truncationMessage = "\n\n... (Output truncated due to length limit) ...\n\n"
+  const availableSpace = limit - truncationMessage.length
+  const halfSpace = Math.floor(availableSpace / 2)
+
+  const start = deduplicated.slice(0, halfSpace)
+  const end = deduplicated.slice(-halfSpace)
+
+  return start + truncationMessage + end
+}
+
+async function executeCommand(command: string, timeout: number, ctx: any, limit: number, directory?: string) {
   const dir = directory ? directory : Instance.directory
   const proc = exec(command, { cwd: dir, signal: ctx.abort, timeout })
   let out = ""
+  let lastUpdate = Date.now()
+  const UPDATE_INTERVAL = 300 // ms
+
+  const reportLiveOutput = () => {
+    if (Date.now() - lastUpdate >= UPDATE_INTERVAL) {
+      ctx.metadata({
+        metadata: {
+          status: "Executing",
+          commands: {
+            [command]: {
+              output: out,
+            },
+          },
+        },
+      })
+      lastUpdate = Date.now()
+    }
+  }
+
   proc.stdout?.on("data", (c) => {
     out += c.toString()
+    reportLiveOutput()
   })
   proc.stderr?.on("data", (c) => {
     out += c.toString()
+    reportLiveOutput()
   })
   await new Promise<void>((resolve) => {
     proc.on("close", () => resolve())
   })
-  return { output: out, exitCode: proc.exitCode || 0 }
+  const exitCode = proc.exitCode || 0
+  ctx.metadata({
+    metadata: {
+      status: exitCode === 0 ? "Completed" : "Failed",
+      commands: {
+        [command]: {
+          output: out,
+          exitCode: exitCode,
+        },
+      },
+    },
+  })
+  const truncated = truncateOutput(out, limit)
+  return { output: truncated, exitCode }
 }
 
-async function summarizeOutput(
-  output: string,
-  limit: number,
-  autosummarize: boolean,
-  ctx: any,
-  context: { command?: string; description?: string },
-): Promise<{ output: string; summarized: boolean; originalLength: number }> {
-  const originalLength = output.length
-
-  if (output.length <= limit) {
-    return { output, summarized: false, originalLength }
-  }
-
-  if (!autosummarize) {
-    return {
-      output: output.slice(0, limit) + "\n\n(Output was truncated due to length limit)",
-      summarized: false,
-      originalLength,
-    }
-  }
-
-  const instr = context.description
-    ? `Please summarize the following command output that had the original intent: ${context.description}\n\nCommand: ${context.command}\nOutput:\n'''${output}'''`
-    : `Please summarize the following command output:\n\nCommand: ${context.command}\nOutput:\n'''${output}'''`
-
-  const { params: supportParams, prompt } = await buildSupportModelParams(
-    "bash-summary",
-    ctx.agent,
-    BASH_OUTPUT_SUMMARY_TEMPLATE,
-    ctx.sessionID,
-  )
-
-  const sum = await generateText({
-    ...supportParams,
-    maxRetries: 3,
-    messages: [
-      { role: "system", content: prompt },
-      { role: "user", content: instr },
-    ],
+function createBashExecuteTool(ctx: any, timeout: number, limit: number, state: { commandCount: number, maxCommands: number, maxFailuresReached: boolean }): AITool {
+  const schema = z.object({
+    command: z.string().describe("The CLI command to execute"),
+    timeout: z.number().optional().default(timeout).describe("Timeout for this command in milliseconds"),
+    limit: z.number().optional().default(limit).describe("Character limit that the output will be truncated to"),
   })
 
-  return { output: sum.text, summarized: true, originalLength }
+  return tool({
+    description: "Execute a CLI command and receive the output with the exit code",
+    inputSchema: jsonSchema(z.toJSONSchema(schema) as any),
+    async execute({ command, timeout: cmdTimeout, limit: cmdLimit }: z.infer<typeof schema>, _options: any) {
+      // Check limits before executing
+      if (state.commandCount >= state.maxCommands) {
+        return JSON.stringify({
+          exitCode: -1,
+          output: `Maximum command limit (${state.maxCommands}) reached. Please provide a summary of what was accomplished.`,
+          status: -1,
+        })
+      }
+
+      if (state.maxFailuresReached) {
+        return JSON.stringify({
+          exitCode: -1,
+          output: "Maximum consecutive failures reached. Please provide a summary of what was attempted.",
+          status: -1,
+        })
+      }
+
+      await BashPermissions.checkCommand(command, ctx, {
+        description: "Agentic execution",
+      })
+
+      state.commandCount++
+      const effectiveTimeout = cmdTimeout ?? timeout
+      const effectiveLimit = cmdLimit ?? limit
+      const result = await executeCommand(command, effectiveTimeout, ctx, effectiveLimit)
+
+      return JSON.stringify({
+        exitCode: result.exitCode,
+        output: result.output,
+        status: result.exitCode,
+      })
+    },
+  }) as AITool
 }
 
 async function handleAgenticMode(params: any, ctx: any) {
-  const maxIter = params.maxIterations || DEFAULT_MAX_ITERATIONS
-  const maxFail = params.maxConsecutiveFailures || DEFAULT_CONSECUTIVE_FAILURES
-  let i = 0
-  let fails = 0
-  const convo: Array<{ role: "user" | "assistant"; content: string }> = []
-
-  convo.push({ role: "user", content: params.description })
-
-  type Step = { index: number; assistant: string; command: string; exitCode: number; output: string }
-  const steps: Step[] = []
-
-  while (i < maxIter) {
-    const { params: supportParams, prompt } = await buildSupportModelParams(
-      "bash",
-      ctx.agent,
-      BASH_CONSTRUCT_TEMPLATE,
-      ctx.sessionID,
-    )
-    const substituted = await Template.substituteInputs(prompt, getBashInputs())
-    const gen = await generateText({
-      ...supportParams,
-      maxRetries: 3,
-      messages: [{ role: "system", content: substituted }, ...convo],
-    })
-    const assistant = gen.text.trim()
-    const done = assistant.toLowerCase().includes("done") || assistant.toLowerCase().includes("complete")
-    if (done) break
-
-    const cmd = assistant
-    await BashPermissions.checkCommand(cmd, ctx, { description: `Agentic iteration ${i + 1}` })
-    const res = await executeCommand(cmd, params.timeout || DEFAULT_TIMEOUT, ctx)
-
-    steps.push({ index: i + 1, assistant, command: cmd, exitCode: res.exitCode, output: res.output })
-
-    convo.push({ role: "assistant", content: cmd })
-    convo.push({ role: "user", content: `Exit code: ${res.exitCode}\nOutput: ${res.output}` })
-
-    if (res.exitCode !== 0) {
-      fails += 1
-      if (fails >= maxFail) break
-    } else {
-      fails = 0
-    }
-
-    i += 1
-    ctx.metadata({
-      metadata: {
-        currentIteration: i,
-        totalIterations: maxIter,
-        lastCommand: cmd,
-        lastOutput: res.output,
-        lastExitCode: res.exitCode,
-      },
-    })
-  }
-
-  const extended = steps
-    .map(
-      (s) =>
-        `## Step ${s.index}\nAssistant:\n${s.assistant}\n\nExecute:\n${s.command}\n\nExit code: ${s.exitCode}\nOutput:\n${s.output}\n`,
-    )
-    .join("\n---\n\n")
-
+  const maxIter = params.maxIterations ?? DEFAULT_MAX_ITERATIONS
+  const maxFail = params.maxConsecutiveFailures ?? DEFAULT_CONSECUTIVE_FAILURES
+  const timeout = params.timeout ?? DEFAULT_TIMEOUT
   const limit = params.limit ?? DEFAULT_LIMIT
-  const summaryResult = await summarizeOutput(
-    extended,
-    limit,
-    params.autosummarize || false,
-    ctx,
-    { command: "multi-step agentic session", description: params.description },
+
+  let fails = 0
+  const toolState = {
+    commandCount: 0,
+    maxCommands: maxIter,
+    maxFailuresReached: false,
+  }
+  const steps: Array<{
+    text: string
+    exitCode?: number
+    type: "command" | "text-delta"
+  }> = []
+
+  // Report initial metadata
+  ctx.metadata({
+    metadata: {
+      maxRetries: maxFail,
+    },
+  })
+
+  // Build system prompt with input substitution
+  const { params: supportParams, systemMessages } = await buildSupportModelParams(
+    "bash",
+    ctx.agent,
+    BASH_CONSTRUCT_TEMPLATE,
+    ctx.sessionID,
   )
 
+  // Substitute {input:} patterns in the last system message (main prompt, not spoof header)
+  const substitutedMessages = await Promise.all(
+    systemMessages.map(async (msg, idx) => ({
+      role: "system" as const,
+      content: idx === systemMessages.length - 1
+        ? await Template.substituteInputs(msg, getBashInputs())
+        : msg
+    }))
+  )
+
+  // Create execute tool with shared state
+  const bashTool = createBashExecuteTool(ctx, timeout, limit, toolState)
+
+  // Stream with tool calling
+  const stream = streamText({
+    ...supportParams,
+    messages: [
+      ...substitutedMessages,
+      { role: "user", content: params.goal },
+    ],
+    tools: { execute_cli: bashTool },
+    abortSignal: ctx.abort,
+    stopWhen: stepCountIs(Math.max(maxIter + 1, 2)),
+  })
+
+  for await (const chunk of stream.fullStream) {
+    ctx.abort.throwIfAborted?.()
+
+    switch (chunk.type) {
+      case "text-delta":
+        // Check if the text contains a retry-after JSON structure (rate limit)
+        try {
+          const parsed = JSON.parse(chunk.text)
+          if (parsed["retry-after"]) {
+            throw new Error("Rate limit encountered during agentic bash execution")
+          }
+        } catch (e) {
+          // Not JSON or doesn't contain retry-after, continue normally
+          if (e instanceof Error && e.message.includes("Rate limit")) {
+            throw e
+          }
+        }
+
+        steps.push({
+          text: chunk.text,
+          type: "text-delta",
+        })
+        ctx.metadata({
+          metadata: {
+            steps,
+            status: "Thinking",
+          },
+        })
+        break
+
+      case "tool-call":
+        if (chunk.toolName === "execute_cli") {
+          const command = (chunk.input as any).command
+
+          steps.push({
+            text: command,
+            type: "command",
+          })
+
+          ctx.metadata({
+            metadata: {
+              steps,
+              lastCommand: command,
+              status: "Executing",
+            },
+          })
+        }
+        break
+
+      case "tool-result":
+        if (chunk.toolName === "execute_cli") {
+          try {
+            const parsed = JSON.parse(chunk.output as string)
+            const command = (chunk.input as any).command
+
+            // Set status code of last command or push new step
+            if (steps.length > 0 && steps[steps.length - 1].type === "command" && steps[steps.length - 1].text === command) {
+              steps[steps.length - 1].exitCode = parsed.exitCode
+            } else {
+              steps.push({
+                text: command,
+                exitCode: parsed.exitCode,
+                type: "command",
+              })
+            }
+
+            ctx.metadata({
+              metadata: {
+                steps,
+                lastCommand: command,
+                lastExitCode: parsed.exitCode,
+              },
+            })
+
+            // Track failures
+            if (parsed.exitCode !== 0) {
+              fails++
+              if (fails >= maxFail) {
+                toolState.maxFailuresReached = true
+              }
+            } else {
+              fails = 0
+              toolState.maxFailuresReached = false
+            }
+
+            // Stream progress
+            ctx.metadata({
+              metadata: {
+                attempt: fails + 1,
+              },
+            })
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+        break
+    }
+  }
+
+  // Return with LLM's natural summary (NOT truncated)
   return {
     title: `Agentic execution (${steps.length} commands)`,
     metadata: {
-      agenticMode: true,
-      totalCommands: steps.length,
-      summarized: summaryResult.summarized,
-      originalLength: summaryResult.originalLength,
-      results: steps.map((s) => ({
-        command: s.command,
-        output: s.output,
-        exitCode: s.exitCode,
-        description: `Step ${s.index}`,
-        assistant: s.assistant,
-        toolCall: { name: "execute", directory: Instance.directory },
-      })),
+      steps,
     },
-    output: summaryResult.output,
+    output: steps.map((s) => (s.type === "command" ? `$ ${s.text}\n(exit code: ${s.exitCode ?? "pending"})` : s.text)).join("\n"),
   }
 }
 
 export const BashTool = Tool.define("bash", {
   description: DESCRIPTION,
   parameters: z.object({
-    command: z
-      .string()
-      .optional()
-      .describe("The direct command to execute. If provided, description is used as context/explanation only."),
-    description: z
-      .string()
-      .describe(
-        "Description of what you want to accomplish. Used as natural language instructions when no command is provided, or as context when command is provided.",
-      ),
-    timeout: z.number().optional().describe("Optional timeout in milliseconds"),
-    limit: z
-      .number()
-      .optional()
-      .default(DEFAULT_LIMIT)
-      .describe(
-        "If > 0, the output of the invoked command will either be truncated or summarized to fit within this character limit (default `" +
-          DEFAULT_LIMIT +
-          "` characters)",
-      ),
-    autosummarize: z
-      .boolean()
-      .optional()
-      .describe(
-        "Attempt to summarize the output to fit within the limit instead of truncating it, if limit is exceeded",
-      ),
-    maxIterations: z
-      .number()
-      .optional()
-      .default(DEFAULT_MAX_ITERATIONS)
-      .describe("Maximum number of command iterations in agentic mode"),
-    maxConsecutiveFailures: z
-      .number()
-      .optional()
-      .default(DEFAULT_CONSECUTIVE_FAILURES)
-      .describe("In agentic mode, maximum number of consecutive command failures before stopping execution"),
+    command: z.string().optional().describe("The CLI command to execute (enables direct mode)"),
+    goal: z.string().describe("What you want to accomplish (direct mode: context, agentic mode: objective)"),
+    timeout: z.number().optional().default(DEFAULT_TIMEOUT).describe("Optional timeout in milliseconds"),
+    limit: z.number().optional().default(DEFAULT_LIMIT).describe("Character limit for truncating CLI output"),
+    maxIterations: z.number().optional().default(DEFAULT_MAX_ITERATIONS).describe("Maximum iterations for agentic mode"),
+    maxConsecutiveFailures: z.number().optional().default(DEFAULT_CONSECUTIVE_FAILURES).describe("Maximum consecutive failures for agentic mode"),
   }),
-  key: (p) => ["bash", !p.command ? "agentic" : "direct", p.command ? p.command : p.description].join("|"),
-  expireAfter: (p) => (!!p.command && p.autosummarize ? undefined : DEFAULT_EXPIRATION),
+  key: (p) => ["bash", p.command ? "direct" : "agentic", p.command || p.goal].join("|"),
+  expireAfter: (_p) => DEFAULT_EXPIRATION,
   async execute(params, ctx) {
     const timeout = Math.min(params.timeout ?? DEFAULT_TIMEOUT, MAX_TIMEOUT)
-    if (!params.command) return handleAgenticMode(params, ctx)
-
-    const cmd = params.command
-    const desc = params.description
-
-    await BashPermissions.checkCommand(cmd, ctx, { description: desc })
-
-    const res = await executeCommand(cmd, timeout, ctx)
-
-    ctx.metadata({ metadata: { output: res.output, exit: res.exitCode, description: desc } })
-
     const limit = params.limit ?? DEFAULT_LIMIT
-    const summaryResult = await summarizeOutput(
-      res.output,
-      limit,
-      params.autosummarize || false,
-      ctx,
-      { command: cmd, description: desc },
-    )
 
-    return {
-      title: cmd,
-      metadata: {
-        output: summaryResult.output,
-        exit: res.exitCode,
-        description: desc,
-        summarized: summaryResult.summarized,
-        originalLength: summaryResult.originalLength,
-        agenticMode: false,
-        totalCommands: 1,
-        results: [
-          {
-            command: cmd,
-            output: summaryResult.output,
-            exitCode: res.exitCode,
-            description: desc,
-            assistant: "",
-            toolCall: { name: "execute", directory: Instance.directory },
-          },
-        ],
-      },
-      output: summaryResult.output,
+    // Direct command mode
+    if (!!params.command) {
+      await BashPermissions.checkCommand(params.command, ctx, { description: params.goal })
+      const res = await executeCommand(params.command, timeout, ctx, limit)
+      return {
+        title: params.command,
+        metadata: {
+          steps: [
+            {
+              text: params.command,
+              exitCode: res.exitCode,
+              type: "command" as const,
+            },
+          ],
+          status: res.exitCode === 0 ? "Completed" : "Failed",
+        },
+        output: res.output + `\n\n(exit code: ${res.exitCode})`,
+      }
     }
+
+    // Agentic mode
+    return handleAgenticMode(params, ctx)
   },
 })

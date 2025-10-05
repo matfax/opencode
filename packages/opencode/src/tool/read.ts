@@ -79,7 +79,7 @@ export const ReadTool = Tool.define("read", {
       // Generate summary using the support model
       const userInstruction = `Please summarize the following file content with focus on: ${params.query}\n\nFile: ${path.relative(Instance.worktree, filepath)}\n\n'''${fullContent}'''`
 
-      const { params: supportParams, prompt } = await buildSupportModelParams(
+      const { params: supportParams, systemMessages } = await buildSupportModelParams(
         "summary",
         ctx.agent,
         FILE_SUMMARY_TEMPLATE,
@@ -90,7 +90,7 @@ export const ReadTool = Tool.define("read", {
         ...supportParams,
         maxRetries: 3,
         messages: [
-          { role: "system", content: prompt },
+          ...systemMessages.map(content => ({ role: "system" as const, content })),
           { role: "user", content: userInstruction },
         ],
       })

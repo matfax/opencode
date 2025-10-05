@@ -17,6 +17,7 @@ import (
 	"github.com/sst/opencode/internal/styles"
 	"github.com/sst/opencode/internal/theme"
 	"github.com/sst/opencode/internal/util"
+	"github.com/sst/opencode/internal/viewport"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -456,6 +457,11 @@ func renderToolDetails(
 	toolCall opencode.ToolPart,
 	permission opencode.Permission,
 	width int,
+	bashCommandZones *map[string]*bashCommandData,
+	messageID string,
+	partIndex int,
+	expandedBashCommands map[string]bool,
+	bashViewports map[string]*viewport.Model,
 ) string {
 	measure := util.Measure("chat.renderToolDetails")
 	defer measure("tool", toolCall.Tool)
@@ -522,6 +528,15 @@ func renderToolDetails(
 	}
 
 	if metadata, ok := toolCall.State.Metadata.(map[string]any); ok {
+		// Render status for running tools (crosscutting concern)
+		if status := renderToolStatus(metadata, toolCall); status != "" {
+			body = status + "\n\n"
+		}
+
+		// Render instructions/goal/description for running tools (crosscutting concern)
+		if instructions := renderToolInstructions(toolInputMap, toolCall, width); instructions != "" {
+			body += instructions + "\n\n"
+		}
 
 		switch toolCall.Tool {
 		case "read":
@@ -531,33 +546,31 @@ func renderToolDetails(
 			}
 			if preview != nil && toolInputMap["filePath"] != nil {
 				filename := toolInputMap["filePath"].(string)
-				body = preview.(string)
+				body += preview.(string)
 				body = util.RenderFile(filename, body, width, util.WithTruncate(6))
 			}
 		case "edit":
 			if filename, ok := toolInputMap["filePath"].(string); ok {
-
-				sections := editSections(metadata, toolCall, toolInputMap, width, filename)
-				body = strings.Join(sections, "\n\n")
+				sections := editSections(metadata, toolCall, width, filename)
+				body += strings.Join(sections, "\n\n")
 			}
 		case "write":
 			if filename, ok := toolInputMap["filePath"].(string); ok {
 				if content, ok := toolInputMap["content"].(string); ok {
-					body = util.RenderFile(filename, content, width)
+					body += util.RenderFile(filename, content, width)
 					if diagnostics := renderDiagnostics(metadata, filename, backgroundColor, width-4); diagnostics != "" {
 						body += "\n\n" + diagnostics
 					}
 				}
 			}
 		case "bash":
-			if command, ok := toolInputMap["command"].(string); ok {
-				body = fmt.Sprintf("```console\n$ %s\n", command)
-				output := metadata["output"]
-				if output != nil {
-					body += ansi.Strip(fmt.Sprintf("%s", output))
+			sections, bashData := bashSections(metadata, toolCall, toolInputMap, width, messageID, partIndex, expandedBashCommands, bashViewports)
+			body += strings.Join(sections, "\n\n")
+			// Thread bash command data back to messagesComponent for click handling
+			if bashCommandZones != nil {
+				for cmd, data := range bashData {
+					(*bashCommandZones)[cmd] = data
 				}
-				body += "```"
-				body = util.ToMarkdown(body, width, backgroundColor)
 			}
 		case "webfetch":
 			if format, ok := toolInputMap["format"].(string); ok && result != nil {

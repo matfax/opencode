@@ -61,6 +61,9 @@ function ToolIcon(props: { part: ToolPart }) {
       <Match when={props.part.tool === "write"}>
         <CollapsibleTimelineIcon name="file-plus" />
       </Match>
+      <Match when={props.part.tool === "bash"}>
+        <CollapsibleTimelineIcon name="terminal" />
+      </Match>
     </Switch>
   )
 }
@@ -159,6 +162,311 @@ function WriteToolPart(props: { part: ToolPart }) {
   )
 }
 
+function CommandOutputOverlay(props: {
+  command: string
+  output: string
+  exitCode: number | undefined
+  isExecuting: boolean
+  onClose: () => void
+}) {
+  return (
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      onClick={props.onClose}
+    >
+      <div
+        class="bg-background-panel border border-border-subtle rounded-lg shadow-2xl max-w-4xl w-full max-h-[80vh] flex flex-col m-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div class="flex items-center justify-between p-4 border-b border-border-subtle">
+          <div class="flex items-center gap-2 flex-1 min-w-0">
+            <span class="font-mono text-sm text-text">$ {props.command}</span>
+            {props.isExecuting && <span class="text-yellow-500 text-sm">...</span>}
+            {props.exitCode !== undefined && (
+              <span
+                classList={{
+                  "text-sm font-semibold": true,
+                  "text-green-500": props.exitCode === 0,
+                  "text-red-500": props.exitCode !== 0,
+                }}
+              >
+                [{props.exitCode}]
+              </span>
+            )}
+          </div>
+          <button
+            class="text-text-muted hover:text-text transition-colors"
+            onClick={props.onClose}
+            aria-label="Close"
+          >
+            <Icon name="close" class="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Output */}
+        <div class="flex-1 overflow-auto p-4">
+          <Code code={props.output || "(no output yet)"} path="output.sh" class="text-sm" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type BashStep = {
+  text: string
+  exitCode?: number
+  type: "command" | "text-delta"
+}
+
+type BashSegment =
+  | { kind: "command"; step: BashStep }
+  | { kind: "reasoning"; text: string }
+
+function BashToolPart(props: { part: ToolPart }) {
+  const metadata = createMemo<Record<string, unknown> | undefined>(() => {
+    const maybe = (props.part.state as { metadata?: unknown }).metadata
+    if (!maybe || typeof maybe !== "object") return undefined
+    return maybe as Record<string, unknown>
+  })
+
+  const input = createMemo<Record<string, unknown> | undefined>(() => {
+    const maybe = (props.part.state as { input?: unknown }).input
+    if (!maybe || typeof maybe !== "object") return undefined
+    return maybe as Record<string, unknown>
+  })
+
+  const status = () => props.part.state.status
+  const isRunning = () => status() === "running"
+  const isPending = () => status() === "pending"
+
+  const steps = createMemo<BashStep[]>(() => {
+    const raw = metadata()?.["steps"]
+    if (!Array.isArray(raw)) return []
+    return raw.flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return []
+      const record = entry as Record<string, unknown>
+      const type = typeof record["type"] === "string" ? (record["type"] as BashStep["type"]) : "text-delta"
+      if (type !== "command" && type !== "text-delta") return []
+      const text = typeof record["text"] === "string" ? (record["text"] as string) : ""
+      const exitRaw = record["exitCode"]
+      const exitCode = typeof exitRaw === "number" ? exitRaw : undefined
+      return [{ text, exitCode, type }]
+    })
+  })
+
+  const fallbackCommand = createMemo(() => {
+    const command = input()?.["command"]
+    if (typeof command !== "string") return undefined
+    const trimmed = command.trim()
+    if (trimmed === "") return undefined
+    return trimmed
+  })
+
+  const segments = createMemo<BashSegment[]>(() => {
+    const collected = steps().reduce(
+      (acc, step) => {
+        if (step.type === "text-delta") {
+          return { list: acc.list, text: acc.text + step.text }
+        }
+        if (step.type === "command") {
+          const trimmed = acc.text.trim()
+          const list = trimmed === ""
+            ? acc.list
+            : [...acc.list, { kind: "reasoning" as const, text: trimmed }]
+          return { list: [...list, { kind: "command" as const, step }], text: "" }
+        }
+        return acc
+      },
+      { list: [] as BashSegment[], text: "" }
+    )
+
+    const list = collected.text.trim() === ""
+      ? collected.list
+      : [...collected.list, { kind: "reasoning" as const, text: collected.text.trim() }]
+
+    if (list.length > 0) return list
+    const command = fallbackCommand()
+    if (!command) return list
+    return [{ kind: "command", step: { text: command, type: "command" } }]
+  })
+
+  const commandMap = createMemo(() => {
+    const raw = metadata()?.["commands"]
+    if (!raw || typeof raw !== "object") return {} as Record<string, { output: string; exitCode?: number }>
+    const result: Record<string, { output: string; exitCode?: number }> = {}
+    for (const [cmd, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (!value || typeof value !== "object") continue
+      const record = value as Record<string, unknown>
+      const output = typeof record["output"] === "string" ? (record["output"] as string) : ""
+      const exitRaw = record["exitCode"]
+      const exitCode = typeof exitRaw === "number" ? exitRaw : undefined
+      result[cmd] = { output, exitCode }
+    }
+    return result
+  })
+
+  const statusText = createMemo(() => {
+    if (!isRunning()) return undefined
+    const value = metadata()?.["status"]
+    if (typeof value === "string" && value.trim() !== "") return `🔄 ${value}`
+    return "🔄 Starting"
+  })
+
+  const instructionText = createMemo(() => {
+    if (!isRunning()) return undefined
+  const target = input()
+    if (!target) return undefined
+    const keys = ["instructions", "goal", "description"] as const
+    const key = keys.find((item) => {
+      const value = target[item]
+      return typeof value === "string" && value.trim() !== ""
+    })
+    if (!key) return undefined
+    return (target[key] as string).trim()
+  })
+
+  const goalText = createMemo(() => {
+    if (isPending()) return undefined
+  const value = input()?.["goal"]
+    if (typeof value !== "string") return undefined
+    const trimmed = value.trim()
+    if (trimmed === "") return undefined
+    const instruction = instructionText()
+    if (instruction && instruction === trimmed) return undefined
+    return trimmed
+  })
+
+  const attemptInfo = createMemo(() => {
+  const meta = metadata()
+    const attemptRaw = meta?.["attempt"]
+    const maxRaw = meta?.["maxRetries"]
+    if (typeof attemptRaw !== "number" || typeof maxRaw !== "number") return undefined
+    if (attemptRaw <= 1 || maxRaw <= 1) return undefined
+    return { attempt: Math.trunc(attemptRaw), max: Math.trunc(maxRaw) }
+  })
+
+  const [overlayCommand, setOverlayCommand] = createSignal<string | null>(null)
+
+  const errorMessage = createMemo(() => {
+    if (status() !== "error") return undefined
+    const value = (props.part.state as { error?: unknown }).error
+    if (typeof value !== "string") return undefined
+    return value
+  })
+
+  return (
+    <>
+      <Match when={overlayCommand()}>
+        {(cmd) => {
+          const map = commandMap()
+          const data = map[cmd()]
+          const segment = segments().find(
+            (item): item is Extract<BashSegment, { kind: "command" }> => item.kind === "command" && item.step.text === cmd(),
+          )
+          const exitCode = data?.exitCode ?? segment?.step.exitCode
+          return (
+            <CommandOutputOverlay
+              command={cmd()}
+              output={data?.output ?? ""}
+              exitCode={exitCode}
+              isExecuting={data?.exitCode === undefined}
+              onClose={() => setOverlayCommand(null)}
+            />
+          )
+        }}
+      </Match>
+
+      <Match when={statusText()}>
+        {(text) => <div class="text-xs font-semibold text-accent mb-2">{text()}</div>}
+      </Match>
+
+      <Match when={instructionText()}>
+        {(text) => (
+          <div class="text-xs text-text-muted/70 mb-2">
+            ℹ️ {text()}
+          </div>
+        )}
+      </Match>
+
+      <Match when={goalText()}>
+        {(text) => (
+          <div class="text-xs font-semibold text-text mb-2">
+            Goal: {text()}
+          </div>
+        )}
+      </Match>
+
+      <Match when={attemptInfo()}>
+        {(info) => (
+          <div class="mb-2 inline-flex items-center">
+            <span class="bg-accent text-background font-semibold text-[10px] px-2 py-0.5 rounded">
+              Attempt {info().attempt}/{info().max}
+            </span>
+          </div>
+        )}
+      </Match>
+
+      <For each={segments()}>
+        {(segment) => {
+          if (segment.kind === "reasoning") {
+            return (
+              <div class="mt-2 p-2 bg-background-panel rounded border border-border-subtle text-xs">
+                <Markdown
+                  text={segment.text}
+                  class={isRunning() ? "text-text-muted" : "text-accent"}
+                />
+              </div>
+            )
+          }
+
+          const map = commandMap()
+          const data = map[segment.step.text]
+          const exitCode = data?.exitCode ?? segment.step.exitCode
+          const isExecutingCommand = data?.exitCode === undefined
+          const output = data?.output ?? ""
+          const lines = output.split("\n").filter((line) => line.trim() !== "")
+          const lastLine = lines[lines.length - 1]
+
+          return (
+            <div
+              class="border border-border-subtle rounded bg-background-panel p-3 mb-2 cursor-pointer hover:border-accent transition-colors"
+              onClick={() => setOverlayCommand(segment.step.text)}
+            >
+              <div class="flex items-center gap-2 mb-1">
+                <span class="font-mono text-xs text-text-muted">$ {segment.step.text}</span>
+                {isExecutingCommand && <span class="text-yellow-500 text-xs">...</span>}
+                {exitCode !== undefined && (
+                  <span
+                    classList={{
+                      "text-xs font-semibold": true,
+                      "text-green-500": exitCode === 0,
+                      "text-red-500": exitCode !== 0,
+                    }}
+                  >
+                    [{exitCode}]
+                  </span>
+                )}
+              </div>
+              <div class="text-xs text-text-muted/80 font-mono truncate">
+                {lastLine || (isExecutingCommand ? "(executing...)" : "(no output)")}
+              </div>
+            </div>
+          )
+        }}
+      </For>
+
+      <Match when={errorMessage()}>
+        {(err) => (
+          <div class="mt-2 p-2 bg-background-panel rounded border border-red-500 text-xs text-red-500">
+            ⚠️ {err()}
+          </div>
+        )}
+      </Match>
+    </>
+  )
+}
+
 function ToolPart(props: { part: ToolPart }) {
   return (
     <Switch
@@ -181,6 +489,11 @@ function ToolPart(props: { part: ToolPart }) {
       <Match when={props.part.tool === "write"}>
         <div class="min-w-0 flex-auto">
           <WriteToolPart part={props.part} />
+        </div>
+      </Match>
+      <Match when={props.part.tool === "bash"}>
+        <div class="min-w-0 flex-auto">
+          <BashToolPart part={props.part} />
         </div>
       </Match>
     </Switch>

@@ -124,4 +124,26 @@ export namespace SystemPrompt {
         return [PROMPT_SUMMARIZE]
     }
   }
+
+  export async function resolve(input: {
+    system?: string
+    agent: { prompt?: string; name: string }
+    providerID: string
+    modelID: string
+  }) {
+    let system = header(input.providerID)
+    system.push(
+      ...(() => {
+        if (input.system) return [input.system]
+        if (input.agent.prompt) return [input.agent.prompt]
+        return provider(input.modelID)
+      })(),
+    )
+    system.push(...(await environment()))
+    system.push(...(await custom()))
+    // max 2 system prompt messages for caching purposes
+    const [first, ...rest] = system
+    system = [first, rest.join("\n")]
+    return system
+  }
 }

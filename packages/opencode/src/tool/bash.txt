@@ -1,10 +1,11 @@
-Run bash commands in a persistent shell with optional timeout. Supports direct command execution or natural language to command generation.
+Execute CLI commands with optional timeout. Supports direct command execution or agentic mode with tool-calling.
 
 Usage:
-- Provide either `command` with a `description` (direct execution) or `description` only (in natural language, as sub-agentic instructions)
+- Provide `command` with `goal` (direct execution) or `goal` only (agentic mode with AI agent using tool-calling)
 - For commands creating directories, use the List tool to verify parent directories first
 - Always quote file paths with spaces (e.g., cd "path with spaces/file.txt")
-- Output is truncated when the character count exceeds the `limit` parameter (default 1,000 characters)
+- CLI output is truncated when exceeding the `limit` parameter (default 1,000 characters)
+- In agentic mode, the agent returns its reasoning and summary (NOT truncated)
 - Separate multiple commands with `;` or `&&` (not newlines)
 - Avoid `cd` unless explicitly requested
 

@@ -25,7 +25,7 @@ func renderFullToolTitle(
 		if a, ok := metadata["attempt"].(float64); ok {
 			attempt = a
 		}
-		if m, ok := metadata["max_retries"].(float64); ok {
+		if m, ok := metadata["maxRetries"].(float64); ok {
 			maxRetries = m
 		}
 	}
@@ -202,7 +202,7 @@ func renderArgs(args *map[string]any, titleKey string) string {
 			title = fmt.Sprintf("%s", value)
 			continue
 		}
-		if key == "prompt" || key == "content" || key == "url" || key == "instructions" || key == "description" || key == "query" {
+		if key == "prompt" || key == "content" || key == "url" || key == "instructions" || key == "description" || key == "query" || key == "goal" {
 			continue
 		}
 		if key == "command" {

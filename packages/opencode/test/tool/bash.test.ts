@@ -23,7 +23,8 @@ describe("tool.bash", () => {
       const result = await bash.execute(
         {
           command: "echo 'test'",
-          description: "Echo test message",
+          goal: "Echo test message",
+          timeout: 5000,
           limit: 1000,
           maxIterations: 1,
           maxConsecutiveFailures: 1,
@@ -42,7 +43,8 @@ describe("tool.bash", () => {
         bash.execute(
           {
             command: "cd ../",
-            description: "Try to cd to parent directory",
+            goal: "Try to cd to parent directory",
+            timeout: 5000,
             limit: 1000,
             maxIterations: 1,
             maxConsecutiveFailures: 1,

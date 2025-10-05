@@ -141,7 +141,7 @@ export const WebFetchTool = Tool.define("webfetch", {
           ? `Please summarize the following web page content with focus on: ${params.prompt}\n\n'''${markdown}'''`
           : `Please summarize the following web page content:\n\n'''${markdown}'''`
 
-        const { params: supportParams, prompt } = await buildSupportModelParams(
+        const { params: supportParams, systemMessages } = await buildSupportModelParams(
           "summary",
           ctx.agent,
           SUMMARY_TEMPLATE,
@@ -151,7 +151,7 @@ export const WebFetchTool = Tool.define("webfetch", {
           ...supportParams,
           maxRetries: 3,
           messages: [
-            { role: "system", content: prompt },
+            ...systemMessages.map(content => ({ role: "system" as const, content })),
             { role: "user", content: userInstruction },
           ],
         })

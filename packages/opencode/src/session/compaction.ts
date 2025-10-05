@@ -110,10 +110,12 @@ export namespace SessionCompaction {
     const {
       params: supportParams,
       modelInfo,
-      prompt,
+      systemMessages,
     } = await buildSupportModelParams("compact", input.agent.name, COMPACT_TEMPLATE, input.sessionID)
 
     // Build system context once and reuse for message + LLM call
+    // NOTE: For compaction we use a special system structure (summarize-specific prompts)
+    // instead of the default system messages from buildSupportModelParams
     const system = [
       ...SystemPrompt.summarize(modelInfo.providerID),
       ...(await SystemPrompt.environment()),
@@ -147,7 +149,8 @@ export namespace SessionCompaction {
     const convMsgs: ModelMessage[] = MessageV2.toModelMessage(toSummarize)
     // Build final messages: system context, conversation, then user instructions
     const systemMsgs: ModelMessage[] = system.map((text) => ({ role: "system", content: text }))
-    const userMsg: ModelMessage = { role: "user", content: prompt }
+    // Use the last system message from systemMessages as user instruction (custom compact prompt if configured)
+    const userMsg: ModelMessage = { role: "user", content: systemMessages[systemMessages.length - 1] }
     const generated = await generateText({
       ...supportParams,
       maxRetries: 10,

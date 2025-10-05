@@ -202,7 +202,7 @@ export async function applyEditOutput(
   const {
     params: supportParams,
     modelInfo: modelInfo,
-    prompt,
+    systemMessages,
   } = await buildSupportModelParams(
     "apply",
     ctx.agent,
@@ -224,7 +224,8 @@ export async function applyEditOutput(
     contentNew = extractCodeFromMarkdown(gen.text)
   } else {
     // Path 2: Generic fallback (all other models)
-    const instruction = prompt.length > 0 ? prompt.trim() + "\n\n" : ""
+    // If there's a custom prompt in systemMessages, prepend it to user content
+    const instruction = systemMessages.length > 0 ? systemMessages[systemMessages.length - 1].trim() + "\n\n" : ""
     const userContent = `${instruction}File: ${path.relative(Instance.directory, filePath)}\n\n--- ORIGINAL START ---\n${contentOld}\n--- ORIGINAL END ---\n\n--- CHANGES START ---\n${editOutput}\n--- CHANGES END ---`
     const gen = await generateText({
       ...supportParams,

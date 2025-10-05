@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	zone "github.com/lrstanley/bubblezone/v2"
 	"github.com/sst/opencode-sdk-go"
 	"github.com/sst/opencode/internal/app"
 	"github.com/sst/opencode/internal/commands"
@@ -43,6 +44,15 @@ type MessagesComponent interface {
 	ScrollToMessage(messageID string) (tea.Model, tea.Cmd)
 }
 
+type bashCommandData struct {
+	command   string
+	output    string
+	exitCode  *int
+	messageID string
+	partIndex int
+	toolCall  *opencode.ToolPart
+}
+
 type messagesComponent struct {
 	width, height      int
 	app                *app.App
@@ -60,7 +70,12 @@ type messagesComponent struct {
 	lineCount          int
 	selection          *selection
 	messagePositions   map[string]int // map message ID to line position
-	animating          bool
+	animating            bool
+	expandedBashCommands map[string]bool              // track which bash commands are expanded
+	bashViewports        map[string]*viewport.Model   // one viewport per expanded bash command
+	bashCommandZones     map[string]*bashCommandData  // track bash command data for click zones
+	bashClickZoneID      string                       // track which bash zone was clicked (empty if not a bash click)
+	bashClickPos         struct{ x, y int }           // track initial click position
 }
 
 type selection struct {
@@ -109,7 +124,33 @@ func (m *messagesComponent) Init() tea.Cmd {
 
 func (m *messagesComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+
 	switch msg := msg.(type) {
+	case tea.MouseWheelMsg:
+		// Check if mouse is over any expanded bash command viewport
+		for zoneID := range m.expandedBashCommands {
+			// Check if mouse is within the zone bounds
+			if zone.Get(zoneID).InBounds(tea.MouseClickMsg{
+				X: msg.X,
+				Y: msg.Y,
+			}) {
+				// Mouse is over this expanded bash command, route to its viewport
+				if vp, ok := m.bashViewports[zoneID]; ok {
+					var cmd tea.Cmd
+					*vp, cmd = vp.Update(msg)
+					if cmd != nil {
+						cmds = append(cmds, cmd)
+					}
+					// Clear cache to force re-render of bash sections
+					m.cache.Clear()
+					// Trigger re-render to show updated viewport
+					cmds = append(cmds, m.renderView())
+					return m, tea.Batch(cmds...)
+				}
+			}
+		}
+		// If not over any expanded bash viewport, let it fall through to main viewport
+	case tea.KeyPressMsg:
 	case shimmerTickMsg:
 		if !m.app.HasAnimatingWork() {
 			m.animating = false
@@ -121,6 +162,29 @@ func (m *messagesComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 	case tea.MouseClickMsg:
 		slog.Info("mouse", "x", msg.X, "y", msg.Y, "offset", m.viewport.YOffset)
+
+		// Check if clicking on a bash command zone - track it but don't toggle yet
+		// (wait for release to distinguish from drag selection)
+		bashZoneClick := false
+		if m.bashCommandZones != nil {
+			for zoneID := range m.bashCommandZones {
+				if zone.Get(zoneID).InBounds(msg) {
+					// Track this bash zone click
+					m.bashClickZoneID = zoneID
+					m.bashClickPos.x = msg.X
+					m.bashClickPos.y = msg.Y
+					bashZoneClick = true
+					break
+				}
+			}
+		}
+
+		// If not clicking on a bash zone, clear tracking
+		if !bashZoneClick {
+			m.bashClickZoneID = ""
+		}
+
+		// Always start selection tracking regardless of bash zone
 		y := msg.Y + m.viewport.YOffset
 		if y > 0 {
 			m.selection = &selection{
@@ -135,6 +199,16 @@ func (m *messagesComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.MouseMotionMsg:
+		// Clear bash click tracking if mouse moved significantly (indicates drag, not click)
+		// Allow small movements (3 pixels) for natural hand jitter
+		if m.bashClickZoneID != "" {
+			dx := msg.X - m.bashClickPos.x
+			dy := msg.Y - m.bashClickPos.y
+			if dx*dx+dy*dy > 9 { // 3 pixels squared
+				m.bashClickZoneID = ""
+			}
+		}
+
 		if m.selection != nil {
 			m.selection = &selection{
 				startX: m.selection.startX,
@@ -146,6 +220,87 @@ func (m *messagesComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.MouseReleaseMsg:
+		// Check if this was a bash zone click (no motion occurred)
+		if m.bashClickZoneID != "" {
+			zoneID := m.bashClickZoneID
+			data := m.bashCommandZones[zoneID]
+
+			// Clear bash click tracking
+			m.bashClickZoneID = ""
+
+			// Toggle expansion state
+			if m.expandedBashCommands[zoneID] {
+				// Collapse: remove from expanded set and delete viewport
+				delete(m.expandedBashCommands, zoneID)
+				delete(m.bashViewports, zoneID)
+			} else {
+				// Expand: add to expanded set and create viewport
+				m.expandedBashCommands[zoneID] = true
+
+				// Get fresh output
+				output := data.output
+				oldOutput := data.output
+				if data.toolCall != nil {
+					if metadata, ok := data.toolCall.State.Metadata.(map[string]any); ok {
+						if cmds, ok := metadata["commands"].(map[string]any); ok {
+							if cmdData, ok := cmds[data.command].(map[string]any); ok {
+								if out, ok := cmdData["output"].(string); ok {
+									output = out
+								}
+							}
+						}
+					}
+				}
+
+				// Calculate expanded height (max 60% of screen)
+				maxHeight := int(float64(m.height) * 0.6)
+				outputLines := strings.Count(output, "\n") + 1
+				vpHeight := outputLines + 2 // +2 for padding
+				if vpHeight > maxHeight {
+					vpHeight = maxHeight
+				}
+
+				// Check if we should auto-scroll (if output is growing and we're near bottom)
+				shouldAutoScroll := false
+				if existingVp, exists := m.bashViewports[zoneID]; exists {
+					// Check if output has grown
+					if len(output) > len(oldOutput) {
+						// Check if we're >99% scrolled down
+						if existingVp.YOffset > 0 {
+							scrollPercentage := float64(existingVp.YOffset) / float64(max(1, lipgloss.Height(oldOutput)-vpHeight))
+							if scrollPercentage > 0.99 {
+								shouldAutoScroll = true
+							}
+						}
+					}
+				}
+
+				// Create or update viewport
+				vp := viewport.New()
+				vp.SetWidth(m.width - 12) // Account for borders and padding
+				vp.SetHeight(vpHeight)
+				vp.KeyMap = viewport.KeyMap{}
+				if m.app.ScrollSpeed > 0 {
+					vp.MouseWheelDelta = m.app.ScrollSpeed
+				} else {
+					vp.MouseWheelDelta = 2
+				}
+				vp.MouseWheelEnabled = true
+				vp.SetContent(output)
+
+				// Auto-scroll to bottom if needed
+				if shouldAutoScroll {
+					vp.GotoBottom()
+				}
+
+				m.bashViewports[zoneID] = &vp
+			}
+
+			// Invalidate cache since expansion state changed
+			m.cache.Clear()
+			return m, m.renderView()
+		}
+
 		if m.selection != nil {
 			m.selection = nil
 			if len(m.clipboard) > 0 {
@@ -327,6 +482,12 @@ func (m *messagesComponent) renderView() tea.Cmd {
 	tail := m.tail
 
 	return func() tea.Msg {
+		// Initialize bash zones map if nil, but don't clear existing zones
+		// This allows zones to persist even when tools are no longer being rendered
+		if m.bashCommandZones == nil {
+			m.bashCommandZones = make(map[string]*bashCommandData)
+		}
+
 		header := m.renderHeader()
 		measure := util.Measure("messages.renderView")
 		defer measure()
@@ -607,6 +768,11 @@ func (m *messagesComponent) renderView() tea.Cmd {
 									part,
 									permission,
 									width,
+									&m.bashCommandZones,
+									casted.ID,
+									partIndex,
+									m.expandedBashCommands,
+									m.bashViewports,
 								)
 								m.cache.Set(key, content)
 							}
@@ -617,6 +783,11 @@ func (m *messagesComponent) renderView() tea.Cmd {
 								part,
 								permission,
 								width,
+								&m.bashCommandZones,
+								casted.ID,
+								partIndex,
+								m.expandedBashCommands,
+								m.bashViewports,
 							)
 						}
 						if content != "" {
@@ -782,7 +953,7 @@ func (m *messagesComponent) renderView() tea.Cmd {
 			if err != nil || response == nil {
 				slog.Error("Failed to get message from child session", "error", err)
 			} else {
-				for _, part := range response.Parts {
+				for partIdx, part := range response.Parts {
 					if part.CallID == m.app.CurrentPermission.CallID {
 						if toolPart, ok := part.AsUnion().(opencode.ToolPart); ok {
 							content := renderToolDetails(
@@ -790,6 +961,11 @@ func (m *messagesComponent) renderView() tea.Cmd {
 								toolPart,
 								m.app.CurrentPermission,
 								width,
+								&m.bashCommandZones,
+								m.app.CurrentPermission.MessageID,
+								partIdx,
+								m.expandedBashCommands,
+								m.bashViewports,
 							)
 							if content != "" {
 								partCount++
@@ -1060,9 +1236,12 @@ func (m *messagesComponent) View() string {
 	}
 
 	viewport := m.viewport.View()
-	return styles.NewStyle().
+	mainView := styles.NewStyle().
 		Background(bgColor).
 		Render(m.header + "\n" + viewport)
+
+	// Wrap in zone.Scan for click detection
+	return zone.Scan(mainView)
 }
 
 func (m *messagesComponent) PageUp() (tea.Model, tea.Cmd) {
@@ -1293,6 +1472,9 @@ func (m *messagesComponent) ScrollToMessage(messageID string) (tea.Model, tea.Cm
 }
 
 func NewMessagesComponent(app *app.App) MessagesComponent {
+	// Initialize global zone manager for bubblezone
+	zone.NewGlobal()
+
 	vp := viewport.New()
 	vp.KeyMap = viewport.KeyMap{}
 
@@ -1314,12 +1496,15 @@ func NewMessagesComponent(app *app.App) MessagesComponent {
 	}
 
 	return &messagesComponent{
-		app:                app,
-		viewport:           vp,
-		showToolDetails:    showToolDetails,
-		showThinkingBlocks: showThinkingBlocks,
-		cache:              NewPartCache(),
-		tail:               true,
-		messagePositions:   make(map[string]int),
+		app:                  app,
+		viewport:             vp,
+		showToolDetails:      showToolDetails,
+		showThinkingBlocks:   showThinkingBlocks,
+		cache:                NewPartCache(),
+		tail:                 true,
+		messagePositions:     make(map[string]int),
+		expandedBashCommands: make(map[string]bool),
+		bashViewports:        make(map[string]*viewport.Model),
+		bashCommandZones:     make(map[string]*bashCommandData),
 	}
 }

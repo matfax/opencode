@@ -414,20 +414,7 @@ export namespace SessionPrompt {
     providerID: string
     modelID: string
   }) {
-    let system = SystemPrompt.header(input.providerID)
-    system.push(
-      ...(() => {
-        if (input.system) return [input.system]
-        if (input.agent.prompt) return [input.agent.prompt]
-        return SystemPrompt.provider(input.modelID)
-      })(),
-    )
-    system.push(...(await SystemPrompt.environment()))
-    system.push(...(await SystemPrompt.custom()))
-    // max 2 system prompt messages for caching purposes
-    const [first, ...rest] = system
-    system = [first, rest.join("\n")]
-    return system
+    return SystemPrompt.resolve(input)
   }
 
   async function resolveTools(input: {
@@ -1789,14 +1776,14 @@ export namespace SessionPrompt {
     const {
       params: supportParams,
       modelInfo,
-      prompt,
+      systemMessages,
     } = await buildSupportModelParams("title", input.agent.name, PROMPT_TITLE, input.session.id)
 
     generateText({
       ...supportParams,
       maxOutputTokens: modelInfo.info.reasoning ? 1500 : 20,
       messages: [
-        { role: "system", content: prompt },
+        ...systemMessages.map(content => ({ role: "system" as const, content })),
         ...MessageV2.toModelMessage([
           {
             info: {
