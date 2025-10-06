@@ -22,6 +22,9 @@ import { LSP } from "../lsp"
 import { Permission } from "../permission"
 import { buildSupportModelParams } from "../session/support-model-params"
 import { ReadTool } from "./read"
+import { GrepTool } from "./grep"
+import { GlobTool } from "./glob"
+import { SymbolTool } from "./symbol"
 // Re-export replace for existing tests that import from this module
 export { replace } from "../util/apply"
 
@@ -46,51 +49,26 @@ function parseEditOutput(output: string): { output: string; code: string } {
 }
 
 // Add retry configuration
-const MAX_RETRIES = 5
+const MAX_RETRIES = 10
+const MAX_CONSECUTIVE_FAILURES = 3
 const PREVIEW_LINES = 20
 
 // Define agentic tools for the edit model
-function createEditAgentTools(
+async function createEditAgentTools(
   contentOld: string,
   filePath: string,
   ctx: Tool.Context<any>,
   hasApplyModel: boolean,
   currentFormatRef: { format: Template.Format },
-  lastSuccessfulEditRef: { content: string; diff: string; summary: string }
-): Record<string, AITool> {
+  lastSuccessfulEditRef: { content: string; diff: string; summary: string },
+  failureState: { consecutiveFailures: number; maxFailuresReached: boolean }
+): Promise<Record<string, AITool>> {
   return {
-    read: tool({
-      description: "Read a file from the filesystem to understand context or verify content",
-      inputSchema: zodSchema(z.object({
-        filePath: z.string().describe("The absolute or relative path to the file to read"),
-        limit: z.number().optional().describe("The number of lines to read (default: 200)"),
-        offset: z.number().optional().describe("The line number to start reading from (0-based, default: 0)"),
-      })),
-      execute: async ({ filePath: targetPath, limit, offset }) => {
-        try {
-          const readTool = await ReadTool.init()
-          const result = await readTool.execute(
-            {
-              filePath: targetPath,
-              limit: limit ?? 200,
-              offset: offset ?? 0,
-              // Explicitly omit query to disable summarization
-            },
-            ctx
-          )
-          return {
-            success: true,
-            content: result.output,
-            totalLines: result.metadata.totalLines,
-          }
-        } catch (err: any) {
-          return {
-            success: false,
-            error: err?.message || String(err),
-          }
-        }
-      },
-    }),
+    // Use adapter to convert existing tools, omitting 'query' param from read tool
+    read: tool(await Tool.toAISDKTool(ReadTool, ctx, { omitParams: ["query"] })),
+    grep: tool(await Tool.toAISDKTool(GrepTool, ctx)),
+    glob: tool(await Tool.toAISDKTool(GlobTool, ctx)),
+    symbol: tool(await Tool.toAISDKTool(SymbolTool, ctx)),
     predict: tool({
       description: "Predict the result of an edit (snippet or diff) by applying it to the original file content and checking LSP diagnostics",
       inputSchema: zodSchema(z.object({
@@ -98,6 +76,15 @@ function createEditAgentTools(
         instruction: z.string().optional().describe("1-sentence instruction guiding the apply model how to integrate the changes (only used for Snippet format)"),
       })),
       execute: async ({ code, instruction }) => {
+        // Check if max consecutive failures reached
+        if (failureState.maxFailuresReached) {
+          return {
+            success: false,
+            error: `Maximum consecutive failures (${MAX_CONSECUTIVE_FAILURES}) reached. Please use reject tool to explain what went wrong.`,
+            diagnostics: [],
+          }
+        }
+
         try {
           // Detect format
           const looksLikeDiff = /^\s*(diff\s|@@)/m.test(code)
@@ -126,6 +113,12 @@ function createEditAgentTools(
 
           // Check if any changes occurred
           if (contentOld.trimEnd() === contentNew.trimEnd()) {
+            // Track failure
+            failureState.consecutiveFailures++
+            if (failureState.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+              failureState.maxFailuresReached = true
+            }
+
             return {
               success: false,
               error:
@@ -182,6 +175,12 @@ function createEditAgentTools(
               ? `Changes would introduce diagnostic errors in target file:\n${diagnosticMessages}\n\nNote: Changes also affected other files (${otherFiles.join(", ")}), but these won't block the edit.`
               : `Changes would introduce diagnostic errors:\n${diagnosticMessages}`
 
+            // Track failure
+            failureState.consecutiveFailures++
+            if (failureState.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+              failureState.maxFailuresReached = true
+            }
+
             return {
               success: false,
               error: errorMessage,
@@ -189,10 +188,14 @@ function createEditAgentTools(
             }
           }
 
-          // Store successful edit for finalization
+          // Store successful edit for finalization and reset failures
           lastSuccessfulEditRef.content = contentNew
           lastSuccessfulEditRef.diff = diff || ""
           lastSuccessfulEditRef.summary = instruction || "Edit applied"
+
+          // Reset failure counter on success
+          failureState.consecutiveFailures = 0
+          failureState.maxFailuresReached = false
 
           return {
             success: true,
@@ -200,6 +203,12 @@ function createEditAgentTools(
             diagnostics: [],
           }
         } catch (err: any) {
+          // Track failure
+          failureState.consecutiveFailures++
+          if (failureState.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            failureState.maxFailuresReached = true
+          }
+
           return {
             success: false,
             error: err?.message || String(err),
@@ -295,9 +304,8 @@ export const EditTool = Tool.define("edit", {
     ctx.metadata({
       metadata: {
         status: "Reading target file",
-        maxRetries: MAX_RETRIES,
+        maxRetries: MAX_CONSECUTIVE_FAILURES,
         previewLines: PREVIEW_LINES,
-        attempt: 1,
       },
     })
 
@@ -349,12 +357,12 @@ export const EditTool = Tool.define("edit", {
     // Agentic tool-calling flow: model reviews and corrects its own output
     let summary = ""
     let outputDiff = ""
-    let attempt = 1
     const currentFormatRef = { format: currentFormat }
     const lastSuccessfulEditRef = { content: "", diff: "", summary: "" }
+    const failureState = { consecutiveFailures: 0, maxFailuresReached: false }
 
     // Create tools for the edit agent
-    const editTools = createEditAgentTools(contentOld, filePath, ctx, hasApplyModel, currentFormatRef, lastSuccessfulEditRef)
+    const editTools = await createEditAgentTools(contentOld, filePath, ctx, hasApplyModel, currentFormatRef, lastSuccessfulEditRef, failureState)
 
     // Update status: preparing agentic prompt
     ctx.metadata({
@@ -433,13 +441,19 @@ export const EditTool = Tool.define("edit", {
             const result = typeof chunk.output === "string" ? JSON.parse(chunk.output) : chunk.output
             if (!result.success) {
               lastApplyError = result.error
-              attempt = Math.min(MAX_RETRIES, attempt + 1)
               ctx.metadata({
                 metadata: {
                   status: "Retrying edit after failed prediction",
-                  attempt,
-                  maxRetries: MAX_RETRIES,
+                  attempt: failureState.consecutiveFailures + 1,
+                  maxRetries: MAX_CONSECUTIVE_FAILURES,
                   error: result.error,
+                },
+              })
+            } else {
+              // Reset attempt counter on success
+              ctx.metadata({
+                metadata: {
+                  attempt: 1,
                 },
               })
             }

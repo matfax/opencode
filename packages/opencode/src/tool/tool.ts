@@ -47,4 +47,79 @@ export namespace Tool {
       },
     }
   }
+
+  export interface ToAISDKOptions {
+    /** Override the tool description */
+    description?: string
+    /** Keys of parameters to omit from the schema */
+    omitParams?: string[]
+    /** Custom parameter schema transformer */
+    transformParams?: (schema: z.ZodType) => z.ZodType
+    /** Custom result mapper */
+    mapResult?: (result: { title: string; metadata: Metadata; output: string }) => any
+  }
+
+  /**
+   * Convert a Tool.Info to an AI SDK compatible tool
+   * Supports parameter filtering and schema transformation
+   */
+  export async function toAISDKTool<P extends z.ZodType, M extends Metadata>(
+    toolInfo: Info<P, M>,
+    ctx: Context,
+    options: ToAISDKOptions = {}
+  ): Promise<{
+    description?: string
+    inputSchema: z.ZodType
+    execute: (params: any) => Promise<any>
+  }> {
+    const initialized = await toolInfo.init()
+
+    let schema: z.ZodType = initialized.parameters
+
+    // Apply parameter omission if specified
+    if (options.omitParams && options.omitParams.length > 0) {
+      // For ZodObject types, we can use .omit()
+      if (schema instanceof z.ZodObject) {
+        const omitObj = options.omitParams.reduce((acc, key) => {
+          acc[key] = true
+          return acc
+        }, {} as Record<string, true>)
+        schema = schema.omit(omitObj) as z.ZodType
+      } else {
+        throw new Error("omitParams only works with ZodObject schemas")
+      }
+    }
+
+    // Apply custom transformer if specified
+    if (options.transformParams) {
+      schema = options.transformParams(schema)
+    }
+
+    return {
+      description: options.description ?? initialized.description,
+      inputSchema: schema,
+      execute: async (params: any) => {
+        try {
+          const result = await initialized.execute(params, ctx)
+
+          // Apply custom result mapper if specified
+          if (options.mapResult) {
+            return options.mapResult(result)
+          }
+
+          // Default mapping: merge metadata and add content field
+          return {
+            success: true,
+            content: result.output,
+            ...result.metadata,
+          }
+        } catch (err: any) {
+          return {
+            success: false,
+            error: err?.message || String(err),
+          }
+        }
+      },
+    }
+  }
 }
