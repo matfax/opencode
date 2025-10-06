@@ -151,7 +151,7 @@ export const WebFetchTool = Tool.define("webfetch", {
           ...supportParams,
           maxRetries: 3,
           messages: [
-            ...systemMessages.map(content => ({ role: "system" as const, content })),
+            ...systemMessages.map((content) => ({ role: "system" as const, content })),
             { role: "user", content: userInstruction },
           ],
         })

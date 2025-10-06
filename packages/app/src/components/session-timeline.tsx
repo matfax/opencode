@@ -196,11 +196,7 @@ function CommandOutputOverlay(props: {
               </span>
             )}
           </div>
-          <button
-            class="text-text-muted hover:text-text transition-colors"
-            onClick={props.onClose}
-            aria-label="Close"
-          >
+          <button class="text-text-muted hover:text-text transition-colors" onClick={props.onClose} aria-label="Close">
             <Icon name="close" class="w-5 h-5" />
           </button>
         </div>
@@ -220,9 +216,7 @@ type BashStep = {
   type: "command" | "text-delta"
 }
 
-type BashSegment =
-  | { kind: "command"; step: BashStep }
-  | { kind: "reasoning"; text: string }
+type BashSegment = { kind: "command"; step: BashStep } | { kind: "reasoning"; text: string }
 
 function BashToolPart(props: { part: ToolPart }) {
   const metadata = createMemo<Record<string, unknown> | undefined>(() => {
@@ -272,19 +266,18 @@ function BashToolPart(props: { part: ToolPart }) {
         }
         if (step.type === "command") {
           const trimmed = acc.text.trim()
-          const list = trimmed === ""
-            ? acc.list
-            : [...acc.list, { kind: "reasoning" as const, text: trimmed }]
+          const list = trimmed === "" ? acc.list : [...acc.list, { kind: "reasoning" as const, text: trimmed }]
           return { list: [...list, { kind: "command" as const, step }], text: "" }
         }
         return acc
       },
-      { list: [] as BashSegment[], text: "" }
+      { list: [] as BashSegment[], text: "" },
     )
 
-    const list = collected.text.trim() === ""
-      ? collected.list
-      : [...collected.list, { kind: "reasoning" as const, text: collected.text.trim() }]
+    const list =
+      collected.text.trim() === ""
+        ? collected.list
+        : [...collected.list, { kind: "reasoning" as const, text: collected.text.trim() }]
 
     if (list.length > 0) return list
     const command = fallbackCommand()
@@ -316,7 +309,7 @@ function BashToolPart(props: { part: ToolPart }) {
 
   const instructionText = createMemo(() => {
     if (!isRunning()) return undefined
-  const target = input()
+    const target = input()
     if (!target) return undefined
     const keys = ["instructions", "goal", "description"] as const
     const key = keys.find((item) => {
@@ -329,7 +322,7 @@ function BashToolPart(props: { part: ToolPart }) {
 
   const goalText = createMemo(() => {
     if (isPending()) return undefined
-  const value = input()?.["goal"]
+    const value = input()?.["goal"]
     if (typeof value !== "string") return undefined
     const trimmed = value.trim()
     if (trimmed === "") return undefined
@@ -339,7 +332,7 @@ function BashToolPart(props: { part: ToolPart }) {
   })
 
   const attemptInfo = createMemo(() => {
-  const meta = metadata()
+    const meta = metadata()
     const attemptRaw = meta?.["attempt"]
     const maxRaw = meta?.["maxRetries"]
     if (typeof attemptRaw !== "number" || typeof maxRaw !== "number") return undefined
@@ -363,7 +356,8 @@ function BashToolPart(props: { part: ToolPart }) {
           const map = commandMap()
           const data = map[cmd()]
           const segment = segments().find(
-            (item): item is Extract<BashSegment, { kind: "command" }> => item.kind === "command" && item.step.text === cmd(),
+            (item): item is Extract<BashSegment, { kind: "command" }> =>
+              item.kind === "command" && item.step.text === cmd(),
           )
           const exitCode = data?.exitCode ?? segment?.step.exitCode
           return (
@@ -378,24 +372,12 @@ function BashToolPart(props: { part: ToolPart }) {
         }}
       </Match>
 
-      <Match when={statusText()}>
-        {(text) => <div class="text-xs font-semibold text-accent mb-2">{text()}</div>}
-      </Match>
+      <Match when={statusText()}>{(text) => <div class="text-xs font-semibold text-accent mb-2">{text()}</div>}</Match>
 
-      <Match when={instructionText()}>
-        {(text) => (
-          <div class="text-xs text-text-muted/70 mb-2">
-            ℹ️ {text()}
-          </div>
-        )}
-      </Match>
+      <Match when={instructionText()}>{(text) => <div class="text-xs text-text-muted/70 mb-2">ℹ️ {text()}</div>}</Match>
 
       <Match when={goalText()}>
-        {(text) => (
-          <div class="text-xs font-semibold text-text mb-2">
-            Goal: {text()}
-          </div>
-        )}
+        {(text) => <div class="text-xs font-semibold text-text mb-2">Goal: {text()}</div>}
       </Match>
 
       <Match when={attemptInfo()}>
@@ -413,10 +395,7 @@ function BashToolPart(props: { part: ToolPart }) {
           if (segment.kind === "reasoning") {
             return (
               <div class="mt-2 p-2 bg-background-panel rounded border border-border-subtle text-xs">
-                <Markdown
-                  text={segment.text}
-                  class={isRunning() ? "text-text-muted" : "text-accent"}
-                />
+                <Markdown text={segment.text} class={isRunning() ? "text-text-muted" : "text-accent"} />
               </div>
             )
           }
@@ -459,9 +438,7 @@ function BashToolPart(props: { part: ToolPart }) {
 
       <Match when={errorMessage()}>
         {(err) => (
-          <div class="mt-2 p-2 bg-background-panel rounded border border-red-500 text-xs text-red-500">
-            ⚠️ {err()}
-          </div>
+          <div class="mt-2 p-2 bg-background-panel rounded border border-red-500 text-xs text-red-500">⚠️ {err()}</div>
         )}
       </Match>
     </>

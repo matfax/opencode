@@ -61,7 +61,7 @@ async function createEditAgentTools(
   hasApplyModel: boolean,
   currentFormatRef: { format: Template.Format },
   lastSuccessfulEditRef: { content: string; diff: string; summary: string },
-  failureState: { consecutiveFailures: number; maxFailuresReached: boolean }
+  failureState: { consecutiveFailures: number; maxFailuresReached: boolean },
 ): Promise<Record<string, AITool>> {
   return {
     // Use adapter to convert existing tools, omitting 'query' param from read tool
@@ -70,11 +70,19 @@ async function createEditAgentTools(
     glob: tool(await Tool.toAISDKTool(GlobTool, ctx)),
     symbol: tool(await Tool.toAISDKTool(SymbolTool, ctx)),
     predict: tool({
-      description: "Predict the result of an edit (snippet or diff) by applying it to the original file content and checking LSP diagnostics",
-      inputSchema: zodSchema(z.object({
-        code: z.string().describe("The edit code (snippet or unified diff format)"),
-        instruction: z.string().optional().describe("1-sentence instruction guiding the apply model how to integrate the changes (only used for Snippet format)"),
-      })),
+      description:
+        "Predict the result of an edit (snippet or diff) by applying it to the original file content and checking LSP diagnostics",
+      inputSchema: zodSchema(
+        z.object({
+          code: z.string().describe("The edit code (snippet or unified diff format)"),
+          instruction: z
+            .string()
+            .optional()
+            .describe(
+              "1-sentence instruction guiding the apply model how to integrate the changes (only used for Snippet format)",
+            ),
+        }),
+      ),
       execute: async ({ code, instruction }) => {
         // Check if max consecutive failures reached
         if (failureState.maxFailuresReached) {
@@ -169,11 +177,12 @@ async function createEditAgentTools(
             const diagnosticMessages = targetFileDiagnostics.map(LSP.Diagnostic.pretty).join("\n")
 
             // Inform model about all affected files
-            const allAffectedFiles = Object.keys(diagnosticsMap).filter(f => diagnosticsMap[f].length > 0)
-            const otherFiles = allAffectedFiles.filter(f => f !== absolutePath)
-            const errorMessage = otherFiles.length > 0
-              ? `Changes would introduce diagnostic errors in target file:\n${diagnosticMessages}\n\nNote: Changes also affected other files (${otherFiles.join(", ")}), but these won't block the edit.`
-              : `Changes would introduce diagnostic errors:\n${diagnosticMessages}`
+            const allAffectedFiles = Object.keys(diagnosticsMap).filter((f) => diagnosticsMap[f].length > 0)
+            const otherFiles = allAffectedFiles.filter((f) => f !== absolutePath)
+            const errorMessage =
+              otherFiles.length > 0
+                ? `Changes would introduce diagnostic errors in target file:\n${diagnosticMessages}\n\nNote: Changes also affected other files (${otherFiles.join(", ")}), but these won't block the edit.`
+                : `Changes would introduce diagnostic errors:\n${diagnosticMessages}`
 
             // Track failure
             failureState.consecutiveFailures++
@@ -218,11 +227,19 @@ async function createEditAgentTools(
       },
     }),
     write: tool({
-      description: "Write the last successful predict result to disk after permission checks. Only call this after predict returns success=true with no diagnostics.",
-      inputSchema: zodSchema(z.object({
-        summary: z.string().describe("Summary of changes made"),
-        ignoreChecks: z.boolean().optional().describe("Skip validation that predict was called successfully (dangerous - only use if you know what you're doing)"),
-      })),
+      description:
+        "Write the last successful predict result to disk after permission checks. Only call this after predict returns success=true with no diagnostics.",
+      inputSchema: zodSchema(
+        z.object({
+          summary: z.string().describe("Summary of changes made"),
+          ignoreChecks: z
+            .boolean()
+            .optional()
+            .describe(
+              "Skip validation that predict was called successfully (dangerous - only use if you know what you're doing)",
+            ),
+        }),
+      ),
       execute: async ({ summary, ignoreChecks }) => {
         try {
           if (!ignoreChecks && !lastSuccessfulEditRef.content) {
@@ -263,10 +280,15 @@ async function createEditAgentTools(
       },
     }),
     reject: tool({
-      description: "Reject the edit request if the instructions are wrong, incomplete, ambiguous, or cannot be executed properly",
-      inputSchema: zodSchema(z.object({
-        reason: z.string().describe("Detailed explanation of why the instructions are wrong, incomplete, or cannot be executed"),
-      })),
+      description:
+        "Reject the edit request if the instructions are wrong, incomplete, ambiguous, or cannot be executed properly",
+      inputSchema: zodSchema(
+        z.object({
+          reason: z
+            .string()
+            .describe("Detailed explanation of why the instructions are wrong, incomplete, or cannot be executed"),
+        }),
+      ),
       execute: async ({ reason }): Promise<{ rejected: true; reason: string }> => {
         throw new Error(`Edit rejected: ${reason}`)
       },
@@ -362,7 +384,15 @@ export const EditTool = Tool.define("edit", {
     const failureState = { consecutiveFailures: 0, maxFailuresReached: false }
 
     // Create tools for the edit agent
-    const editTools = await createEditAgentTools(contentOld, filePath, ctx, hasApplyModel, currentFormatRef, lastSuccessfulEditRef, failureState)
+    const editTools = await createEditAgentTools(
+      contentOld,
+      filePath,
+      ctx,
+      hasApplyModel,
+      currentFormatRef,
+      lastSuccessfulEditRef,
+      failureState,
+    )
 
     // Update status: preparing agentic prompt
     ctx.metadata({
@@ -385,18 +415,12 @@ export const EditTool = Tool.define("edit", {
     const substitutedSystemMessages = await Promise.all(
       systemMessages.map(async (msg, idx) => ({
         role: "system" as const,
-        content: idx === systemMessages.length - 1
-          ? await Template.substituteInputs(msg, { format: formatName })
-          : msg
-      }))
+        content: idx === systemMessages.length - 1 ? await Template.substituteInputs(msg, { format: formatName }) : msg,
+      })),
     )
 
     // Assemble messages
-    const messages = [
-      ...substitutedSystemMessages,
-      ...fileMessages,
-      finalUser,
-    ]
+    const messages = [...substitutedSystemMessages, ...fileMessages, finalUser]
 
     // Update status: calling agentic edit model
     ctx.metadata({

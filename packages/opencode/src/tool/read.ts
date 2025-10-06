@@ -90,7 +90,7 @@ export const ReadTool = Tool.define("read", {
         ...supportParams,
         maxRetries: 3,
         messages: [
-          ...systemMessages.map(content => ({ role: "system" as const, content })),
+          ...systemMessages.map((content) => ({ role: "system" as const, content })),
           { role: "user", content: userInstruction },
         ],
       })

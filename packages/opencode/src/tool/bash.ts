@@ -40,13 +40,13 @@ function getBashInputs() {
 }
 
 function deduplicateLines(output: string): string {
-  const lines = output.split('\n')
+  const lines = output.split("\n")
   const deduplicated: string[] = []
-  let currentLine = ''
+  let currentLine = ""
   let count = 0
 
   const flush = () => {
-    if (currentLine !== '') {
+    if (currentLine !== "") {
       deduplicated.push(count > 1 ? `${currentLine} (repeated ${count} times)` : currentLine)
     }
   }
@@ -62,15 +62,14 @@ function deduplicateLines(output: string): string {
   }
 
   flush()
-  return deduplicated.join('\n')
+  return deduplicated.join("\n")
 }
 
 function truncateOutput(output: string, limit: number): string {
   // First deduplicate lines
   const deduplicated = deduplicateLines(output)
 
-  if (deduplicated.length <= limit)
-    return deduplicated
+  if (deduplicated.length <= limit) return deduplicated
 
   const truncationMessage = "\n\n... (Output truncated due to length limit) ...\n\n"
   const availableSpace = limit - truncationMessage.length
@@ -132,14 +131,21 @@ async function executeCommand(command: string, timeout: number, ctx: any, limit:
   return { output: truncated, exitCode }
 }
 
-function createBashExecuteTool(ctx: any, timeout: number, limit: number, state: { commandCount: number, maxCommands: number, maxFailuresReached: boolean }): AITool {
+function createBashExecuteTool(
+  ctx: any,
+  timeout: number,
+  limit: number,
+  state: { commandCount: number; maxCommands: number; maxFailuresReached: boolean },
+): AITool {
   return tool({
     description: "Execute a CLI command and receive the output with the exit code",
-    inputSchema: zodSchema(z.object({
-      command: z.string().describe("The CLI command to execute"),
-      timeout: z.number().optional().default(timeout).describe("Timeout for this command in milliseconds"),
-      limit: z.number().optional().default(limit).describe("Character limit that the output will be truncated to"),
-    })),
+    inputSchema: zodSchema(
+      z.object({
+        command: z.string().describe("The CLI command to execute"),
+        timeout: z.number().optional().default(timeout).describe("Timeout for this command in milliseconds"),
+        limit: z.number().optional().default(limit).describe("Character limit that the output will be truncated to"),
+      }),
+    ),
     async execute({ command, timeout: cmdTimeout, limit: cmdLimit }) {
       // Check limits before executing
       if (state.commandCount >= state.maxCommands) {
@@ -213,10 +219,8 @@ async function handleAgenticMode(params: any, ctx: any) {
   const substitutedMessages = await Promise.all(
     systemMessages.map(async (msg, idx) => ({
       role: "system" as const,
-      content: idx === systemMessages.length - 1
-        ? await Template.substituteInputs(msg, getBashInputs())
-        : msg
-    }))
+      content: idx === systemMessages.length - 1 ? await Template.substituteInputs(msg, getBashInputs()) : msg,
+    })),
   )
 
   // Create execute tool with shared state
@@ -225,10 +229,7 @@ async function handleAgenticMode(params: any, ctx: any) {
   // Stream with tool calling
   const stream = streamText({
     ...supportParams,
-    messages: [
-      ...substitutedMessages,
-      { role: "user", content: params.goal },
-    ],
+    messages: [...substitutedMessages, { role: "user", content: params.goal }],
     tools: { execute_cli: bashTool },
     abortSignal: ctx.abort,
     stopWhen: stepCountIs(Math.max(maxIter + 1, 2)),
@@ -290,7 +291,11 @@ async function handleAgenticMode(params: any, ctx: any) {
             const command = (chunk.input as any).command
 
             // Set status code of last command or push new step
-            if (steps.length > 0 && steps[steps.length - 1].type === "command" && steps[steps.length - 1].text === command) {
+            if (
+              steps.length > 0 &&
+              steps[steps.length - 1].type === "command" &&
+              steps[steps.length - 1].text === command
+            ) {
               steps[steps.length - 1].exitCode = parsed.exitCode
             } else {
               steps.push({
@@ -339,7 +344,9 @@ async function handleAgenticMode(params: any, ctx: any) {
     metadata: {
       steps,
     },
-    output: steps.map((s) => (s.type === "command" ? `$ ${s.text}\n(exit code: ${s.exitCode ?? "pending"})` : s.text)).join("\n"),
+    output: steps
+      .map((s) => (s.type === "command" ? `$ ${s.text}\n(exit code: ${s.exitCode ?? "pending"})` : s.text))
+      .join("\n"),
   }
 }
 
@@ -350,8 +357,16 @@ export const BashTool = Tool.define("bash", {
     goal: z.string().describe("What you want to accomplish (direct mode: context, agentic mode: objective)"),
     timeout: z.number().optional().default(DEFAULT_TIMEOUT).describe("Optional timeout in milliseconds"),
     limit: z.number().optional().default(DEFAULT_LIMIT).describe("Character limit for truncating CLI output"),
-    maxIterations: z.number().optional().default(DEFAULT_MAX_ITERATIONS).describe("Maximum iterations for agentic mode"),
-    maxConsecutiveFailures: z.number().optional().default(DEFAULT_CONSECUTIVE_FAILURES).describe("Maximum consecutive failures for agentic mode"),
+    maxIterations: z
+      .number()
+      .optional()
+      .default(DEFAULT_MAX_ITERATIONS)
+      .describe("Maximum iterations for agentic mode"),
+    maxConsecutiveFailures: z
+      .number()
+      .optional()
+      .default(DEFAULT_CONSECUTIVE_FAILURES)
+      .describe("Maximum consecutive failures for agentic mode"),
   }),
   key: (p) => ["bash", p.command ? "direct" : "agentic", p.command || p.goal].join("|"),
   expireAfter: (_p) => DEFAULT_EXPIRATION,

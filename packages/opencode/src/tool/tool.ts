@@ -66,7 +66,7 @@ export namespace Tool {
   export async function toAISDKTool<P extends z.ZodType, M extends Metadata>(
     toolInfo: Info<P, M>,
     ctx: Context,
-    options: ToAISDKOptions = {}
+    options: ToAISDKOptions = {},
   ): Promise<{
     description?: string
     inputSchema: z.ZodType
@@ -80,10 +80,13 @@ export namespace Tool {
     if (options.omitParams && options.omitParams.length > 0) {
       // For ZodObject types, we can use .omit()
       if (schema instanceof z.ZodObject) {
-        const omitObj = options.omitParams.reduce((acc, key) => {
-          acc[key] = true
-          return acc
-        }, {} as Record<string, true>)
+        const omitObj = options.omitParams.reduce(
+          (acc, key) => {
+            acc[key] = true
+            return acc
+          },
+          {} as Record<string, true>,
+        )
         schema = schema.omit(omitObj) as z.ZodType
       } else {
         throw new Error("omitParams only works with ZodObject schemas")

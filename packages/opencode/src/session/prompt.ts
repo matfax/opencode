@@ -1805,7 +1805,7 @@ export namespace SessionPrompt {
       ...supportParams,
       maxOutputTokens: modelInfo.info.reasoning ? 1500 : 20,
       messages: [
-        ...systemMessages.map(content => ({ role: "system" as const, content })),
+        ...systemMessages.map((content) => ({ role: "system" as const, content })),
         ...MessageV2.toModelMessage([
           {
             info: {

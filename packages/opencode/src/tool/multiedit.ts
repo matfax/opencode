@@ -105,10 +105,8 @@ export const MultiEditTool = Tool.define("multiedit", {
     const systemMsgs = await Promise.all(
       systemMessages.map(async (msg, idx) => ({
         role: "system" as const,
-        content: idx === systemMessages.length - 1
-          ? await Template.substituteInputs(msg, { format, example })
-          : msg
-      }))
+        content: idx === systemMessages.length - 1 ? await Template.substituteInputs(msg, { format, example }) : msg,
+      })),
     )
 
     const MAX_EXPANSION_ATTEMPTS = 3
