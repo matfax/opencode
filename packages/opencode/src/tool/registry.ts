@@ -17,6 +17,7 @@ import type { Agent } from "../agent/agent"
 import { Tool } from "./tool"
 import { MultiEditTool } from "./multiedit"
 import { RemoveTool } from "./remove"
+import { RenameTool } from "./rename"
 import { DiffTool } from "./diff"
 
 export namespace ToolRegistry {
@@ -27,6 +28,7 @@ export namespace ToolRegistry {
     EditTool,
     MultiEditTool,
     RemoveTool,
+    RenameTool,
     WebFetchTool,
     GlobTool,
     GrepTool,
@@ -177,6 +179,7 @@ export namespace ToolRegistry {
       result["write"] = false
       result["multiedit"] = false
       result["remove"] = false
+      result["rename"] = false
     }
     if (agent.permission.bash["*"] === "deny" && Object.keys(agent.permission.bash).length === 1) {
       result["bash"] = false

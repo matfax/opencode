@@ -45,6 +45,13 @@ Guidelines:
 - Use well-established command patterns and flags
 - Each command should be independent and executable
 
+Tool delegation requirements:
+- REJECT requests to delete files/directories - instruct user to use the remove tool instead
+- REJECT requests to rename or move files - instruct user to use the rename tool instead
+- REJECT requests using find command - instruct user to use the glob tool instead
+- REJECT requests using grep/rg commands - instruct user to use the grep tool instead
+- When rejecting, provide a clear message about which specialized tool should be used
+
 Security considerations:
 - Never generate commands that could harm the system
 - Avoid commands that modify system files without explicit request

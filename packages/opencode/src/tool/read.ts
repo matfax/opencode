@@ -11,6 +11,7 @@ import { Filesystem } from "../util/filesystem"
 import { Instance } from "../project/instance"
 import { generateText } from "ai"
 import { buildSupportModelParams } from "../session/support-model-params"
+import { Shadow } from "../util/shadow"
 
 const DEFAULT_READ_LIMIT = 200
 const MAX_LINE_LENGTH = 2000
@@ -76,8 +77,14 @@ export const ReadTool = Tool.define("read", {
       // Get full file content for summarization
       const fullContent = lines.join("\n")
 
+      // Read shadow file if it exists
+      const shadowContent = await Shadow.read(filepath)
+      const shadowContext = shadowContent
+        ? `\n\n## Shadow File Requirements\n\`\`\`markdown\n${shadowContent}\n\`\`\`\n\nNote: This shadow file documents requirements and contracts for the file. Consider these when summarizing.`
+        : ""
+
       // Generate summary using the support model
-      const userInstruction = `Please summarize the following file content with focus on: ${params.query}\n\nFile: ${path.relative(Instance.worktree, filepath)}\n\n'''${fullContent}'''`
+      const userInstruction = `Please summarize the following file content with focus on: ${params.query}\n\nFile: ${path.relative(Instance.worktree, filepath)}${shadowContext}\n\n'''${fullContent}'''`
 
       const { params: supportParams, systemMessages } = await buildSupportModelParams(
         "summary",

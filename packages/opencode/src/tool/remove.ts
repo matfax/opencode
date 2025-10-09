@@ -8,6 +8,7 @@ import { Agent } from "../agent/agent"
 import { Permission } from "../permission"
 import { createTwoFilesPatch } from "diff"
 import { trimDiff } from "../util/apply"
+import { Shadow } from "../util/shadow"
 
 declare const Bun: any
 
@@ -53,6 +54,17 @@ export const RemoveTool = Tool.define("remove", {
         deleted = true
       } catch {}
     }
+
+    // Delete shadow file if source was deleted successfully
+    if (deleted) {
+      try {
+        await Shadow.remove(abs)
+      } catch (err) {
+        // Log but don't fail if shadow removal fails
+        console.warn(`Shadow file removal failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
     return {
       title: path.relative(Instance.worktree, abs),
       metadata: { filePath: abs, deleted },

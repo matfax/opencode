@@ -16,7 +16,7 @@ import { Agent } from "../agent/agent"
 import { Template } from "../util/template"
 import { streamText, tool, zodSchema, stepCountIs, type Tool as AITool } from "ai"
 // Shared apply & utility functions
-import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite } from "../util/apply"
+import { applyEditOutput, diffEditOutput, handleDiagnosticsAndFileWrite, applyDiffToContent } from "../util/apply"
 import { extractCodeFromMarkdown, parseReportAndCodeSections } from "../util/extract"
 import { LSP } from "../lsp"
 import { Permission } from "../permission"
@@ -25,6 +25,9 @@ import { ReadTool } from "./read"
 import { GrepTool } from "./grep"
 import { GlobTool } from "./glob"
 import { SymbolTool } from "./symbol"
+import { Shadow } from "../util/shadow"
+import { createReviewTool } from "./review"
+import { FileDiff } from "../util/file-diff"
 // Re-export replace for existing tests that import from this module
 export { replace } from "../util/apply"
 
@@ -49,8 +52,8 @@ function parseEditOutput(output: string): { output: string; code: string } {
 }
 
 // Add retry configuration
-const MAX_RETRIES = 10
-const MAX_CONSECUTIVE_FAILURES = 3
+const MAX_RETRIES = 20
+const MAX_CONSECUTIVE_FAILURES = 5
 const PREVIEW_LINES = 20
 
 // Define agentic tools for the edit model
@@ -60,15 +63,146 @@ async function createEditAgentTools(
   ctx: Tool.Context<any>,
   hasApplyModel: boolean,
   currentFormatRef: { format: Template.Format },
-  lastSuccessfulEditRef: { content: string; diff: string; summary: string },
+  lastSuccessfulEditRef: { fileDiff: FileDiff | null; summary: string },
   failureState: { consecutiveFailures: number; maxFailuresReached: boolean },
+  shadowContent: string,
+  shadowContentRef: { newContent: string | null; approved: boolean },
 ): Promise<Record<string, AITool>> {
   return {
     // Use adapter to convert existing tools, omitting 'query' param from read tool
     read: tool(await Tool.toAISDKTool(ReadTool, ctx, { omitParams: ["query"] })),
     grep: tool(await Tool.toAISDKTool(GrepTool, ctx)),
     glob: tool(await Tool.toAISDKTool(GlobTool, ctx)),
-    symbol: tool(await Tool.toAISDKTool(SymbolTool, ctx)),
+    symbol: tool(await Tool.toAISDKTool(SymbolTool, ctx, { omitParams: ["autorefresh"], defaultParams: { includeShadow: false } })),
+    updateRequirements: tool({
+      description:
+        "Update shadow file requirements with a unified diff. Works for both existing shadows and iterative updates after createRequirements.",
+      inputSchema: zodSchema(
+        z.object({
+          shadowDiff: z.string().describe("Unified diff for shadow file changes (old vs new shadow content)"),
+        }),
+      ),
+      execute: async ({ shadowDiff }) => {
+        try {
+          // Apply diff to old shadow content to preview the result
+          const newShadowContent = applyDiffToContent(shadowContent, shadowDiff)
+
+          // Show user the predicted shadow changes
+          ctx.metadata({
+            metadata: {
+              status: "Requesting permission to update requirements",
+              shadowDiff,
+              oldShadowContent: shadowContent || "(no shadow file exists)",
+              newShadowContent,
+            },
+          })
+
+          // Check if diff removes requirements (triggers strict permission)
+          const hasShadowRemovals = Shadow.hasRemovals(shadowDiff)
+
+          // Get agent for permission check
+          const agent = await Agent.get(ctx.agent)
+
+          // Run permission check if needed
+          if (agent.permission.edit === "ask" || hasShadowRemovals) {
+            await Permission.ask({
+              type: "edit",
+              sessionID: ctx.sessionID,
+              messageID: ctx.messageID,
+              callID: ctx.callID,
+              title: `Update requirements for: ${filePath}${hasShadowRemovals ? " (requirements removed)" : ""}`,
+              metadata: { filePath, shadowDiff },
+              ...((hasShadowRemovals) && { strict: true }),
+            })
+          }
+
+          // Store approved content in shared ref
+          shadowContentRef.newContent = newShadowContent
+          shadowContentRef.approved = true
+
+          return {
+            success: true,
+            message: "Requirements updated and approved. Shadow file will be written after successful file write.",
+          }
+        } catch (err: any) {
+          return {
+            success: false,
+            error: err?.message || String(err),
+          }
+        }
+      },
+    }),
+    createRequirements: tool({
+      description: "Create shadow file for new code file. Use this for initial shadow creation.",
+      inputSchema: zodSchema(
+        z.object({
+          motivation: z.string().describe("Brief description of file purpose and goals"),
+          symbols: z
+            .array(
+              z.object({
+                name: z.string().describe("Symbol name (class, function, interface, enum - no variables)"),
+                purpose: z.string().describe("Why this symbol exists and what it does"),
+                requirements: z.array(z.string()).optional().describe("Specific requirements for this symbol"),
+              })
+            )
+            .optional()
+            .describe("Symbols in the file with their purposes and requirements"),
+        }),
+      ),
+      execute: async ({ motivation, symbols }) => {
+        try {
+          // Check if shadow already exists
+          const shadowExists = await Shadow.exists(filePath)
+          if (shadowExists) {
+            return {
+              success: false,
+              error: "Shadow file already exists. Use updateRequirements instead to modify it.",
+            }
+          }
+
+          // Create shadow content using template
+          const newShadowContent = Shadow.createTemplate(filePath, motivation, symbols)
+
+          // Show user the new shadow content
+          ctx.metadata({
+            metadata: {
+              status: "Requesting permission to define requirements",
+              newShadowContent,
+            },
+          })
+
+          // Get agent for permission check
+          const agent = await Agent.get(ctx.agent)
+
+          // Run permission check (non-strict for new shadow creation)
+          if (agent.permission.edit === "ask") {
+            await Permission.ask({
+              type: "edit",
+              sessionID: ctx.sessionID,
+              messageID: ctx.messageID,
+              callID: ctx.callID,
+              title: `Create shadow file for: ${filePath}`,
+              metadata: { filePath, newShadowContent },
+            })
+          }
+
+          // Store approved content in shared ref
+          shadowContentRef.newContent = newShadowContent
+          shadowContentRef.approved = true
+
+          return {
+            success: true,
+            message: "Requirements created. Shadow file will be written after successful file write.",
+          }
+        } catch (err: any) {
+          return {
+            success: false,
+            error: err?.message || String(err),
+          }
+        }
+      },
+    }),
+    review: await createReviewTool(filePath, lastSuccessfulEditRef, shadowContent, shadowContentRef, ctx),
     predict: tool({
       description:
         "Predict the result of an edit (snippet or diff) by applying it to the original file content and checking LSP diagnostics",
@@ -140,7 +274,7 @@ async function createEditAgentTools(
           // Run LSP diagnostics check on the new content
           ctx.metadata({
             metadata: {
-              status: "Running LSP diagnostics on applied edit",
+              status: "Running diagnostics",
             },
           })
 
@@ -197,9 +331,8 @@ async function createEditAgentTools(
             }
           }
 
-          // Store successful edit for finalization and reset failures
-          lastSuccessfulEditRef.content = contentNew
-          lastSuccessfulEditRef.diff = diff || ""
+          // Store successful edit as FileDiff for finalization and reset failures
+          lastSuccessfulEditRef.fileDiff = new FileDiff(contentOld, contentNew, diff || "", filePath)
           lastSuccessfulEditRef.summary = instruction || "Edit applied"
 
           // Reset failure counter on success
@@ -242,25 +375,29 @@ async function createEditAgentTools(
       ),
       execute: async ({ summary, ignoreChecks }) => {
         try {
-          if (!ignoreChecks && !lastSuccessfulEditRef.content) {
+          if (!ignoreChecks && !lastSuccessfulEditRef.fileDiff) {
             return {
               success: false,
               error: "No successful prediction to write. Call predict first and ensure it succeeds.",
             }
           }
 
-          ctx.metadata({
-            metadata: {
-              status: "Finalizing edit",
-            },
-          })
-
           // Write file with diagnostics and permission checks using the stored successful edit
-          const result = await handleDiagnosticsAndFileWrite(filePath, lastSuccessfulEditRef.content, {
+          const result = await handleDiagnosticsAndFileWrite(filePath, lastSuccessfulEditRef.fileDiff!.newContent, {
             ctx,
-            diff: lastSuccessfulEditRef.diff,
+            diff: lastSuccessfulEditRef.fileDiff!.diff,
             type: "edit",
           })
+
+          // Write shadow file if it was updated and approved
+          if (shadowContentRef.approved && shadowContentRef.newContent) {
+            ctx.metadata({
+              metadata: {
+                status: "Writing shadow file",
+              },
+            })
+            await Shadow.write(filePath, shadowContentRef.newContent)
+          }
 
           return {
             success: true,
@@ -299,7 +436,7 @@ async function createEditAgentTools(
 export const EditTool = Tool.define("edit", {
   description: DESCRIPTION,
   parameters: z.object({
-    filePath: z.string().describe("The absolute path to the file to modify"),
+    filePath: z.string().describe("Path to the file to modify"),
     instructions: z.string().describe("Natural language instructions describing what changes to make"),
     relevantFiles: z
       .array(z.string())
@@ -339,13 +476,6 @@ export const EditTool = Tool.define("edit", {
 
     const contentOld = await file.text()
 
-    // Update status: resolving agents
-    ctx.metadata({
-      metadata: {
-        status: "Resolving edit agents and models",
-      },
-    })
-
     // Determine initial format preference based on apply agent
     const applyAgentForFormat = await Agent.get("apply")
     const hasApplyModel = applyAgentForFormat?.model !== undefined
@@ -358,12 +488,6 @@ export const EditTool = Tool.define("edit", {
       content: `// File: ${path.relative(Instance.directory, filePath)}\n${contentOld}`,
     })
     if (params.relevantFiles) {
-      // Update status: building context
-      ctx.metadata({
-        metadata: {
-          status: "Building contextual messages",
-        },
-      })
 
       for (const rel of params.relevantFiles) {
         try {
@@ -376,12 +500,21 @@ export const EditTool = Tool.define("edit", {
     }
     const finalUser = { role: "user" as const, content: `## Instructions\n${params.instructions}` }
 
+    // Read shadow file if exists
+    ctx.metadata({
+      metadata: {
+        status: "Reading shadow file",
+      },
+    })
+    const shadowContent = await Shadow.read(filePath)
+
     // Agentic tool-calling flow: model reviews and corrects its own output
     let summary = ""
     let outputDiff = ""
     const currentFormatRef = { format: currentFormat }
-    const lastSuccessfulEditRef = { content: "", diff: "", summary: "" }
+    const lastSuccessfulEditRef = { fileDiff: null as FileDiff | null, summary: "" }
     const failureState = { consecutiveFailures: 0, maxFailuresReached: false }
+    const shadowContentRef = { newContent: null as string | null, approved: false }
 
     // Create tools for the edit agent
     const editTools = await createEditAgentTools(
@@ -392,14 +525,9 @@ export const EditTool = Tool.define("edit", {
       currentFormatRef,
       lastSuccessfulEditRef,
       failureState,
+      shadowContent,
+      shadowContentRef,
     )
-
-    // Update status: preparing agentic prompt
-    ctx.metadata({
-      metadata: {
-        status: "Preparing agentic edit prompt",
-      },
-    })
 
     // Build system prompt using the template
     const { params: supportParams, systemMessages } = await buildSupportModelParams(
@@ -419,30 +547,43 @@ export const EditTool = Tool.define("edit", {
       })),
     )
 
-    // Assemble messages
-    const messages = [...substitutedSystemMessages, ...fileMessages, finalUser]
+    // Assemble messages, injecting shadow content if it exists
+    const shadowMessage = shadowContent
+      ? [{ role: "user" as const, content: `## Code Requirements\n\`\`\`markdown\n${shadowContent}\n\`\`\`` }]
+      : [{ role: "user" as const, content: `## Code Requirements\n\nNo requirements documentation exists yet for this file. Use the createRequirements tool if you want to document this code.` }]
+    const messages = [...substitutedSystemMessages, ...shadowMessage, ...fileMessages, finalUser]
 
     // Update status: calling agentic edit model
     ctx.metadata({
       metadata: {
-        status: "Calling agentic edit model with tools",
+        status: "Calling model",
       },
     })
 
     // Call model with tools (agentic mode) using streamText for better control
-    const stream = streamText({
-      ...supportParams,
-      maxRetries: 0,
-      messages,
-      tools: editTools,
-      stopWhen: stepCountIs(Math.max(MAX_RETRIES + 1, 2)),
-    })
+    let stream
+    try {
+      stream = streamText({
+        ...supportParams,
+        maxRetries: 0,
+        messages,
+        tools: editTools,
+        stopWhen: stepCountIs(Math.max(MAX_RETRIES + 1, 2)),
+      })
+    } catch (err: any) {
+      // Extract error details from AI SDK error
+      const errorMessage = err?.responseBody
+        ? `Edit model API error: ${JSON.stringify(err.responseBody)}`
+        : err?.message || String(err)
+      throw new Error(errorMessage)
+    }
 
     // Process stream to collect tool results
     let finalized = false
     let lastApplyError: string | undefined
 
-    for await (const chunk of stream.fullStream) {
+    try {
+      for await (const chunk of stream.fullStream) {
       switch (chunk.type) {
         case "tool-result":
           if (chunk.toolName === "write") {
@@ -461,29 +602,65 @@ export const EditTool = Tool.define("edit", {
               },
               clear: true,
             })
-          } else if (chunk.toolName === "predict") {
-            const result = typeof chunk.output === "string" ? JSON.parse(chunk.output) : chunk.output
-            if (!result.success) {
-              lastApplyError = result.error
+          } else if (chunk.toolName === "review") {
+            try {
+              const result = typeof chunk.output === "string" ? JSON.parse(chunk.output) : chunk.output
+              // Display review result metadata
               ctx.metadata({
                 metadata: {
-                  status: "Retrying edit after failed prediction",
-                  attempt: failureState.consecutiveFailures + 1,
-                  maxRetries: MAX_CONSECUTIVE_FAILURES,
-                  error: result.error,
+                  status: "Review " + (result.passed ? "passed" : "failed"),
+                  reviewSummary: result.summary,
+                  ...(result.suggestions && { reviewSuggestions: result.suggestions }),
                 },
               })
-            } else {
-              // Reset attempt counter on success
+            } catch (err) {
               ctx.metadata({
                 metadata: {
-                  attempt: 1,
+                  status: "Review failed with invalid output",
+                  error: "Review tool returned malformed response",
+                },
+              })
+            }
+          } else if (chunk.toolName === "predict") {
+            try {
+              const result = typeof chunk.output === "string" ? JSON.parse(chunk.output) : chunk.output
+              if (!result.success) {
+                lastApplyError = result.error
+                ctx.metadata({
+                  metadata: {
+                    status: "Retrying after failed prediction",
+                    attempt: failureState.consecutiveFailures + 1,
+                    maxRetries: MAX_CONSECUTIVE_FAILURES,
+                    error: result.error,
+                  },
+                })
+              } else {
+                // Reset attempt counter on success
+                ctx.metadata({
+                  metadata: {
+                    attempt: 1,
+                  },
+                })
+              }
+            } catch (err) {
+              lastApplyError = "Predict tool returned malformed response"
+              ctx.metadata({
+                metadata: {
+                  status: "Prediction failed with invalid output",
+                  error: lastApplyError,
                 },
               })
             }
           }
           break
       }
+    }
+    } catch (err: any) {
+      // Handle streaming errors during edit process
+      const errorMessage = err?.responseBody
+        ? `Edit streaming error: ${JSON.stringify(err.responseBody)}`
+        : err?.message || String(err)
+      throw new Error(errorMessage)
     }
 
     if (!finalized) {

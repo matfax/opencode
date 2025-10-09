@@ -7,6 +7,57 @@ Guidelines:
 - If this targets an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first
 - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless best practices or user instructions explicitly require it
 
+Motivation and Symbols Parameters (for new code files):
+- When creating a NEW code file (not config/docs), provide:
+  * motivation: Brief description of the file's purpose and goals
+  * symbols: Array of symbols (classes, functions, interfaces, enums - NOT variables) with their purposes and requirements
+
+Example for a new TypeScript file:
+  motivation: "Authentication middleware that validates JWT tokens and attaches user context to requests"
+  symbols: [
+    {
+      name: "AuthMiddleware",
+      purpose: "Main middleware class that handles authentication flow",
+      requirements: [
+        "Must validate token before proceeding",
+        "Must attach user to request context on success"
+      ]
+    },
+    {
+      name: "validateToken",
+      purpose: "Validates JWT token and returns decoded payload",
+      requirements: [
+        "Must handle expired tokens gracefully",
+        "Must verify token signature"
+      ]
+    }
+  ]
+
+This creates a shadow file like:
+  ```markdown
+  # src/middleware/auth.ts
+
+  Authentication middleware that validates JWT tokens and attaches user context to requests
+
+  ## AuthMiddleware
+
+  Main middleware class that handles authentication flow
+
+  - Must validate token before proceeding
+  - Must attach user to request context on success
+
+  ## validateToken
+
+  Validates JWT token and returns decoded payload
+
+  - Must handle expired tokens gracefully
+  - Must verify token signature
+  ```
+
+- For non-code files (JSON, YAML, Markdown, etc.), omit both parameters
+- For existing files being overwritten, omit both parameters (shadow file already exists)
+- Remember: Only include classes, functions, interfaces, and enums in symbols - NOT variables or constants
+
 Antipatterns to avoid:
 - NEVER leave comment traces for removed code
 - NEVER edit sections of code irrelevant to the instructions

@@ -1,0 +1,9 @@
+Rename a file to a new path, automatically handling both the source file and its shadow metadata file.
+
+This tool:
+- Renames the source file from oldPath to newPath
+- Automatically renames the corresponding shadow file (if it exists) and updates its header
+- Creates necessary parent directories for the new path
+- Fails if the destination already exists
+
+Use this instead of manual file operations to ensure shadow files stay synchronized with their source files.

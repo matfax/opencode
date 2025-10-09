@@ -2,6 +2,7 @@ package chat
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
@@ -14,10 +15,14 @@ import (
 
 func editSections(metadata map[string]any, toolCall opencode.ToolPart, width int, filename string) []string {
 	var diffContent string
+	var shadowDiffContent string
 	var previewLimit = 10
 
 	if val, ok := metadata["diff"].(string); ok {
 		diffContent = val
+	}
+	if val, ok := metadata["shadowDiff"].(string); ok {
+		shadowDiffContent = val
 	}
 	if val, ok := metadata["previewLines"].(float64); ok && val > 0 {
 		previewLimit = int(val)
@@ -60,6 +65,30 @@ func editSections(metadata map[string]any, toolCall opencode.ToolPart, width int
 		}
 	}
 
+	// Shadow diff section - show requirements changes when available
+	if shadowDiffContent != "" && toolCall.State.Status != opencode.ToolPartStateStatusError {
+		// Derive shadow filename from source filename
+		shadowFilename := strings.TrimSuffix(filename, filepath.Ext(filename)) + ".md"
+
+		// Always use unified diff format for shadow files
+		formattedShadowDiff, _ := diff.FormatUnifiedDiff(
+			shadowFilename,
+			shadowDiffContent,
+			diff.WithWidth(width-2),
+		)
+
+		shadowHeader := "📋 Requirements Changes:"
+		shadowCodeBlock := fmt.Sprintf("```diff\n%s```", strings.TrimSpace(formattedShadowDiff))
+		shadowPreview := util.ToMarkdown(shadowHeader+"\n"+shadowCodeBlock, width, backgroundColor)
+
+		if shadowPreview != "" {
+			shadowStyle := styles.NewStyle().
+				Background(backgroundColor).
+				Foreground(t.TextMuted())
+			sections = append(sections, shadowStyle.Render(shadowPreview))
+		}
+	}
+
 	// Summary field with success symbol
 	if output := toolCall.State.Output; toolCall.State.Status == opencode.ToolPartStateStatusCompleted && output != "" {
 		summaryWrapped := util.ToMarkdown(ansi.WordwrapWc(output, width-8, " "), width, backgroundColor)
@@ -85,16 +114,15 @@ func editSections(metadata map[string]any, toolCall opencode.ToolPart, width int
 		}
 	}
 	if hasError && errorMessage != "" {
-		errorText := fmt.Sprintf("⚠️ %s", errorMessage)
 		errorStyled := styles.NewStyle().
 			Background(backgroundColor).
 			Foreground(errorColor).
-			Render(errorText)
+			Render(errorMessage)
 		sections = append(sections, errorStyled)
 	}
 
 	// Add diagnostics if available
-	if diagnostics := renderDiagnostics(metadata, filename, backgroundColor, width-6); diagnostics != "" {
+	if diagnostics := renderDiagnostics(metadata, filename, backgroundColor, width-6); diagnostics != "" && diagnostics != errorMessage {
 		styledDiagnostics := styles.NewStyle().
 			Background(backgroundColor).
 			Foreground(t.TextMuted()).

@@ -14,6 +14,7 @@ import { readFile } from "fs/promises"
 import { buildSupportModelParams } from "../session/support-model-params"
 import type { LSPClient } from "../lsp/client"
 import type { Tool } from "../tool/tool"
+import { Shadow } from "./shadow"
 
 export function trimDiff(diff: string): string {
   const lines = diff.split("\n")
@@ -61,9 +62,10 @@ export async function handleDiagnosticsAndFileWrite(
     type?: "edit" | "write"
     title?: string
     skipPermission?: boolean
+    shadowDiff?: string
   },
 ) {
-  const { ctx, diff: diffOpt, type = "edit", title, skipPermission } = options
+  const { ctx, diff: diffOpt, type = "edit", title, skipPermission, shadowDiff } = options
   const absolutePath = path.resolve(filePath)
 
   ctx.metadata({
@@ -140,7 +142,7 @@ export async function handleDiagnosticsAndFileWrite(
 
   ctx.metadata({
     metadata: {
-      status: "Waiting for permission to write file",
+      status: "Requesting writing permissions",
     },
   })
 
@@ -148,12 +150,15 @@ export async function handleDiagnosticsAndFileWrite(
   // Check if LSP was unavailable (empty diagnostics object means no LSP clients)
   const lspUnavailable = Object.keys(diagnostics).length === 0
 
+  // Check if shadow diff contains removals (requirement violations)
+  const hasShadowRemovals = shadowDiff ? Shadow.hasRemovals(shadowDiff) : false
+
   // Prompt for permission after diagnostics pass, unless skipped
   if (!skipPermission) {
     const agent = await Agent.get(ctx.agent)
     // Determine permission based on edit permission for both edit and write
-    // When LSP is unavailable, use strict mode to require approval even in build mode
-    if (agent.permission.edit === "ask" || lspUnavailable) {
+    // Use strict mode when: LSP unavailable OR code requirements being removed
+    if (agent.permission.edit === "ask" || lspUnavailable || hasShadowRemovals) {
       await Permission.ask({
         type: permissionType,
         sessionID: ctx.sessionID,
@@ -161,16 +166,16 @@ export async function handleDiagnosticsAndFileWrite(
         callID: ctx.callID,
         title:
           title ??
-          `${permissionType === "edit" ? "Edit" : "Write"} this file: ${absolutePath}${lspUnavailable ? " (LSP unavailable)" : ""}`,
-        metadata: { filePath: absolutePath, diff, lspUnavailable },
-        ...(lspUnavailable && { strict: true }),
+          `${permissionType === "edit" ? "Edit" : "Write"} this file: ${absolutePath}${lspUnavailable ? " (LSP unavailable)" : ""}${hasShadowRemovals ? " (requirements changed)" : ""}`,
+        metadata: { filePath: absolutePath, diff, lspUnavailable, shadowDiff },
+        ...((lspUnavailable || hasShadowRemovals) && { strict: true }),
       })
     }
   }
 
   ctx.metadata({
     metadata: {
-      status: "Writing file to storage",
+      status: "Writing changes",
     },
   })
 

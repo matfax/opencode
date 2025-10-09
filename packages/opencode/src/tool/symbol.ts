@@ -4,6 +4,40 @@ import { Tool } from "./tool"
 import { LSP } from "../lsp"
 import { Instance } from "../project/instance"
 import DESCRIPTION from "./symbol.txt"
+import { Shadow } from "../util/shadow"
+
+/**
+ * Extract a specific symbol section from shadow file content
+ * Returns the ## SymbolName section with its purpose and requirements
+ */
+function extractShadowSection(shadowContent: string, symbolName: string): string {
+  const lines = shadowContent.split("\n")
+  const symbolHeader = `## ${symbolName}`
+
+  let startIdx = -1
+  let endIdx = lines.length
+
+  // Find the symbol header
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i] === symbolHeader) {
+      startIdx = i
+      break
+    }
+  }
+
+  if (startIdx === -1) return "" // Symbol not found in shadow file
+
+  // Find the end (next ## header or end of file)
+  for (let i = startIdx + 1; i < lines.length; i++) {
+    if (lines[i].startsWith("## ")) {
+      endIdx = i
+      break
+    }
+  }
+
+  // Extract and return the section
+  return lines.slice(startIdx, endIdx).join("\n").trim()
+}
 
 async function tryStartLSPServers() {
   // Try to find files in the workspace that might need LSP servers
@@ -106,8 +140,14 @@ export const SymbolTool = Tool.define("symbol", {
     autorefresh: z.boolean().describe("Automatically refresh results when code changes").optional(),
     fullBody: z
       .boolean()
-      .describe("Include full function/method body instead of just signature (recommended for functions)")
-      .optional(),
+      .describe("Include full function/method body instead of just signature")
+      .optional()
+      .default(true),
+    includeShadow: z
+      .boolean()
+      .describe("Include code requirements for this symbol")
+      .optional()
+      .default(true),
   }),
   key: (p) => {
     return ["symbol", p.name].join("|")
@@ -141,6 +181,7 @@ export const SymbolTool = Tool.define("symbol", {
       start: number
       end: number
       code: string
+      shadow?: string
     }[] = []
 
     function matches(target: string) {
@@ -170,13 +211,23 @@ export const SymbolTool = Tool.define("symbol", {
       if (!candidates.length) continue
       const text = await Bun.file(fileAbs).text()
       const lines = text.split("\n")
+
+      // Read shadow file once per file if includeShadow is enabled
+      let shadowContent = ""
+      if (args.includeShadow ?? true) {
+        try {
+          shadowContent = await Shadow.read(fileAbs)
+        } catch {
+          // Silently ignore shadow read errors
+        }
+      }
+
       for (const c of candidates) {
         const range = c.range ?? c.location?.range
         const selectionRange = c.selectionRange ?? c.range ?? c.location?.range
         if (!range || !range.start || !range.end) continue
 
-        // Use selectionRange (signature) by default, or full range when fullBody is requested
-        const useRange = args.fullBody ? range : selectionRange
+        const useRange = (args.fullBody ?? true) ? range : selectionRange
         const start = useRange.start.line
         const end = useRange.end.line
 
@@ -186,6 +237,13 @@ export const SymbolTool = Tool.define("symbol", {
         const body = args.numbering
           ? slice.map((ln, i) => `${(from + 1 + i).toString().padStart(5, "0")}| ${ln}`).join("\n")
           : slice.join("\n")
+
+        // Extract shadow section for this symbol
+        let shadowSection = ""
+        if (shadowContent && c.name) {
+          shadowSection = extractShadowSection(shadowContent, c.name)
+        }
+
         results.push({
           name: c.name,
           kind: c.kind,
@@ -193,6 +251,7 @@ export const SymbolTool = Tool.define("symbol", {
           start,
           end,
           code: body,
+          shadow: shadowSection,
         })
       }
     }
@@ -202,7 +261,11 @@ export const SymbolTool = Tool.define("symbol", {
         ? "No symbols found"
         : results
             .map((r) => {
-              return [`name: ${r.name}`, `file: ${r.file}:${r.start + 1}`, "----", r.code].join("\n")
+              const parts = [`name: ${r.name}`, `file: ${r.file}:${r.start + 1}`, "----", r.code]
+              if (r.shadow) {
+                parts.push("----", "Code Requirements:", r.shadow)
+              }
+              return parts.join("\n")
             })
             .join("\n\n")
 

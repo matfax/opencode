@@ -57,6 +57,8 @@ export namespace Tool {
     transformParams?: (schema: z.ZodType) => z.ZodType
     /** Custom result mapper */
     mapResult?: (result: { title: string; metadata: Metadata; output: string }) => any
+    /** Default parameter values to merge with provided params */
+    defaultParams?: Record<string, any>
   }
 
   /**
@@ -103,7 +105,9 @@ export namespace Tool {
       inputSchema: schema,
       execute: async (params: any) => {
         try {
-          const result = await initialized.execute(params, ctx)
+          // Merge default params with provided params
+          const mergedParams = options.defaultParams ? { ...options.defaultParams, ...params } : params
+          const result = await initialized.execute(mergedParams, ctx)
 
           // Apply custom result mapper if specified
           if (options.mapResult) {

@@ -227,15 +227,25 @@ async function handleAgenticMode(params: any, ctx: any) {
   const bashTool = createBashExecuteTool(ctx, timeout, limit, toolState)
 
   // Stream with tool calling
-  const stream = streamText({
-    ...supportParams,
-    messages: [...substitutedMessages, { role: "user", content: params.goal }],
-    tools: { execute_cli: bashTool },
-    abortSignal: ctx.abort,
-    stopWhen: stepCountIs(Math.max(maxIter + 1, 2)),
-  })
+  let stream
+  try {
+    stream = streamText({
+      ...supportParams,
+      messages: [...substitutedMessages, { role: "user", content: params.goal }],
+      tools: { execute_cli: bashTool },
+      abortSignal: ctx.abort,
+      stopWhen: stepCountIs(Math.max(maxIter + 1, 2)),
+    })
+  } catch (err: any) {
+    // Extract error details from AI SDK error
+    const errorMessage = err?.responseBody
+      ? `Bash model API error: ${JSON.stringify(err.responseBody)}`
+      : err?.message || String(err)
+    throw new Error(errorMessage)
+  }
 
-  for await (const chunk of stream.fullStream) {
+  try {
+    for await (const chunk of stream.fullStream) {
     ctx.abort.throwIfAborted?.()
 
     switch (chunk.type) {
@@ -336,6 +346,13 @@ async function handleAgenticMode(params: any, ctx: any) {
         }
         break
     }
+  }
+  } catch (err: any) {
+    // Handle streaming errors during bash execution
+    const errorMessage = err?.responseBody
+      ? `Bash streaming error: ${JSON.stringify(err.responseBody)}`
+      : err?.message || String(err)
+    throw new Error(errorMessage)
   }
 
   // Return with LLM's natural summary (NOT truncated)
