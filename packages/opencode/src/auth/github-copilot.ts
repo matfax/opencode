@@ -101,9 +101,9 @@ export namespace AuthGithubCopilot {
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${info.refresh}`,
-        "User-Agent": "GitHubCopilotChat/0.26.7",
-        "Editor-Version": "vscode/1.99.3",
-        "Editor-Plugin-Version": "copilot-chat/0.26.7",
+        "User-Agent": "GitHubCopilotChat/0.32.0",
+        "Editor-Version": "vscode/1.105.0",
+        "Editor-Plugin-Version": "copilot-chat/0.32.0",
       },
     })
 
