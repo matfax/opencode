@@ -55,3 +55,20 @@ export abstract class NamedError extends Error {
     }),
   )
 }
+
+/**
+ * Extract a clean error message from AI SDK errors
+ * Handles responseBody parsing and extracts just the error message
+ * without exposing internal error object properties
+ */
+export function extractAISDKErrorMessage(err: any, context: string): string {
+  if (err?.responseBody) {
+    try {
+      const body = typeof err.responseBody === 'string' ? JSON.parse(err.responseBody) : err.responseBody
+      return `${context}: ${body.error?.message || body.message || JSON.stringify(body)}`
+    } catch {
+      return `${context}: ${String(err.responseBody)}`
+    }
+  }
+  return err?.message || String(err)
+}

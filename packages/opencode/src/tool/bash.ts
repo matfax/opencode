@@ -10,6 +10,7 @@ import { streamText, tool, zodSchema, stepCountIs, type Tool as AITool } from "a
 import { BashPermissions } from "../util/bash-permissions"
 import { buildSupportModelParams } from "../session/support-model-params"
 import { Template } from "../util/template"
+import { extractAISDKErrorMessage } from "../util/error"
 
 const DEFAULT_LIMIT = 5_000
 const DEFAULT_TIMEOUT = 1 * 60 * 1000
@@ -237,11 +238,7 @@ async function handleAgenticMode(params: any, ctx: any) {
       stopWhen: stepCountIs(Math.max(maxIter + 1, 2)),
     })
   } catch (err: any) {
-    // Extract error details from AI SDK error
-    const errorMessage = err?.responseBody
-      ? `Bash model API error: ${JSON.stringify(err.responseBody)}`
-      : err?.message || String(err)
-    throw new Error(errorMessage)
+    throw new Error(extractAISDKErrorMessage(err, "Bash model API error"))
   }
 
   try {

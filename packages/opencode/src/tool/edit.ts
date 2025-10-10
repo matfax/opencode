@@ -28,6 +28,7 @@ import { SymbolTool } from "./symbol"
 import { Shadow } from "../util/shadow"
 import { createReviewTool } from "./review"
 import { FileDiff } from "../util/file-diff"
+import { extractAISDKErrorMessage } from "../util/error"
 // Re-export replace for existing tests that import from this module
 export { replace } from "../util/apply"
 
@@ -571,11 +572,7 @@ export const EditTool = Tool.define("edit", {
         stopWhen: stepCountIs(Math.max(MAX_RETRIES + 1, 2)),
       })
     } catch (err: any) {
-      // Extract error details from AI SDK error
-      const errorMessage = err?.responseBody
-        ? `Edit model API error: ${JSON.stringify(err.responseBody)}`
-        : err?.message || String(err)
-      throw new Error(errorMessage)
+      throw new Error(extractAISDKErrorMessage(err, "Edit model API error"))
     }
 
     // Process stream to collect tool results
@@ -656,11 +653,7 @@ export const EditTool = Tool.define("edit", {
       }
     }
     } catch (err: any) {
-      // Handle streaming errors during edit process
-      const errorMessage = err?.responseBody
-        ? `Edit streaming error: ${JSON.stringify(err.responseBody)}`
-        : err?.message || String(err)
-      throw new Error(errorMessage)
+      throw new Error(extractAISDKErrorMessage(err, "Edit streaming error"))
     }
 
     if (!finalized) {

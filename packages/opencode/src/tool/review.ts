@@ -7,6 +7,7 @@ import { GlobTool } from "./glob"
 import { SymbolTool } from "./symbol"
 import { Tool } from "./tool"
 import { FileDiff } from "../util/file-diff"
+import { extractAISDKErrorMessage } from "../util/error"
 
 // @ts-ignore
 import REVIEW_TEMPLATE from "./support/review.txt"
@@ -136,11 +137,7 @@ export async function createReviewTool(
           stopWhen: stepCountIs(MAX_REVIEW_STEPS),
         })
       } catch (err: any) {
-        // Extract error details from AI SDK error
-        const errorMessage = err?.responseBody
-          ? `Review model API error: ${JSON.stringify(err.responseBody)}`
-          : err?.message || String(err)
-        throw new Error(errorMessage)
+        throw new Error(extractAISDKErrorMessage(err, "Review model API error"))
       }
 
       // Process stream to get finalize result
@@ -159,11 +156,7 @@ export async function createReviewTool(
           }
         }
       } catch (err: any) {
-        // Handle streaming errors (might occur during iteration)
-        const errorMessage = err?.responseBody
-          ? `Review streaming error: ${JSON.stringify(err.responseBody)}`
-          : err?.message || String(err)
-        throw new Error(errorMessage)
+        throw new Error(extractAISDKErrorMessage(err, "Review streaming error"))
       }
 
       if (!reviewResult) {
