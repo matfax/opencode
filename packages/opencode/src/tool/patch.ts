@@ -1,3 +1,4 @@
+import { success } from "./metadata"
 import z from "zod/v4"
 import * as path from "path"
 import * as fs from "fs/promises"
@@ -336,7 +337,7 @@ export const PatchTool = Tool.define("patch", {
         additions: totalAdditions,
         removals: totalRemovals,
       },
-      output,
+      output: success(output),
     }
   },
 })

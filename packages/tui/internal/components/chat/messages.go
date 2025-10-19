@@ -76,6 +76,10 @@ type messagesComponent struct {
 	bashCommandZones     map[string]*bashCommandData  // track bash command data for click zones
 	bashClickZoneID      string                       // track which bash zone was clicked (empty if not a bash click)
 	bashClickPos         struct{ x, y int }           // track initial click position
+	expandedContentBlocks map[string]bool             // track which content blocks (read/write/predict) are expanded
+	contentViewports      map[string]*viewport.Model  // one viewport per expanded content block
+	contentClickZoneID    string                      // track which content zone was clicked
+	contentClickPos       struct{ x, y int }          // track initial click position for content blocks
 }
 
 type selection struct {
@@ -149,7 +153,30 @@ func (m *messagesComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		// If not over any expanded bash viewport, let it fall through to main viewport
+
+		// Check if mouse is over any expanded content block viewport
+		for zoneID := range m.expandedContentBlocks {
+			if zone.Get(zoneID).InBounds(tea.MouseClickMsg{
+				X: msg.X,
+				Y: msg.Y,
+			}) {
+				// Mouse is over this expanded content block, route to its viewport
+				if vp, ok := m.contentViewports[zoneID]; ok {
+					var cmd tea.Cmd
+					*vp, cmd = vp.Update(msg)
+					if cmd != nil {
+						cmds = append(cmds, cmd)
+					}
+					// Clear cache to force re-render of content sections
+					m.cache.Clear()
+					// Trigger re-render to show updated viewport
+					cmds = append(cmds, m.renderView())
+					return m, tea.Batch(cmds...)
+				}
+			}
+		}
+
+		// If not over any expanded viewport, let it fall through to main viewport
 	case tea.KeyPressMsg:
 	case shimmerTickMsg:
 		if !m.app.HasAnimatingWork() {
@@ -179,9 +206,33 @@ func (m *messagesComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// If not clicking on a bash zone, clear tracking
+		// Check if clicking on a content block zone (read/write/predict)
+		contentZoneClick := false
+		if !bashZoneClick && m.expandedContentBlocks != nil {
+			// Check for content zone clicks by pattern: content-{messageID}-{partIndex}
+			for zoneID := range m.expandedContentBlocks {
+				if zone.Get(zoneID).InBounds(msg) {
+					m.contentClickZoneID = zoneID
+					m.contentClickPos.x = msg.X
+					m.contentClickPos.y = msg.Y
+					contentZoneClick = true
+					break
+				}
+			}
+			// Also check for collapsed content zones by scanning all possible zone IDs
+			// This is needed because expandedContentBlocks only tracks expanded ones
+			if !contentZoneClick {
+				// We'll detect this on release by checking zone bounds
+				m.contentClickZoneID = ""
+			}
+		}
+
+		// If not clicking on a bash or content zone, clear tracking
 		if !bashZoneClick {
 			m.bashClickZoneID = ""
+		}
+		if !contentZoneClick {
+			m.contentClickZoneID = ""
 		}
 
 		// Always start selection tracking regardless of bash zone
@@ -206,6 +257,15 @@ func (m *messagesComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			dy := msg.Y - m.bashClickPos.y
 			if dx*dx+dy*dy > 9 { // 3 pixels squared
 				m.bashClickZoneID = ""
+			}
+		}
+
+		// Clear content click tracking if mouse moved significantly
+		if m.contentClickZoneID != "" {
+			dx := msg.X - m.contentClickPos.x
+			dy := msg.Y - m.contentClickPos.y
+			if dx*dx+dy*dy > 9 { // 3 pixels squared
+				m.contentClickZoneID = ""
 			}
 		}
 
@@ -294,6 +354,48 @@ func (m *messagesComponent) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				m.bashViewports[zoneID] = &vp
+			}
+
+			// Invalidate cache since expansion state changed
+			m.cache.Clear()
+			return m, m.renderView()
+		}
+
+		// Check if this was a content block click (no motion occurred)
+		if m.contentClickZoneID != "" {
+			zoneID := m.contentClickZoneID
+
+			// Clear content click tracking
+			m.contentClickZoneID = ""
+
+			// Toggle expansion state
+			if m.expandedContentBlocks[zoneID] {
+				// Collapse: remove from expanded set and delete viewport
+				delete(m.expandedContentBlocks, zoneID)
+				delete(m.contentViewports, zoneID)
+			} else {
+				// Expand: add to expanded set and create viewport
+				m.expandedContentBlocks[zoneID] = true
+
+				// Calculate expanded height (max 60% of screen)
+				maxHeight := int(float64(m.height) * 0.6)
+				// Start with a reasonable default height
+				vpHeight := maxHeight
+
+				// Create viewport
+				vp := viewport.New()
+				vp.SetWidth(m.width - 12) // Account for borders and padding
+				vp.SetHeight(vpHeight)
+				vp.KeyMap = viewport.KeyMap{}
+				if m.app.ScrollSpeed > 0 {
+					vp.MouseWheelDelta = m.app.ScrollSpeed
+				} else {
+					vp.MouseWheelDelta = 2
+				}
+				vp.MouseWheelEnabled = true
+				// Content will be set during render
+
+				m.contentViewports[zoneID] = &vp
 			}
 
 			// Invalidate cache since expansion state changed
@@ -773,6 +875,9 @@ func (m *messagesComponent) renderView() tea.Cmd {
 									partIndex,
 									m.expandedBashCommands,
 									m.bashViewports,
+									m.expandedContentBlocks,
+									m.contentViewports,
+									m.height,
 								)
 								m.cache.Set(key, content)
 							}
@@ -788,6 +893,9 @@ func (m *messagesComponent) renderView() tea.Cmd {
 								partIndex,
 								m.expandedBashCommands,
 								m.bashViewports,
+								m.expandedContentBlocks,
+								m.contentViewports,
+								m.height,
 							)
 						}
 						if content != "" {
@@ -966,6 +1074,9 @@ func (m *messagesComponent) renderView() tea.Cmd {
 								partIdx,
 								m.expandedBashCommands,
 								m.bashViewports,
+								m.expandedContentBlocks,
+								m.contentViewports,
+								m.height,
 							)
 							if content != "" {
 								partCount++
@@ -1496,15 +1607,17 @@ func NewMessagesComponent(app *app.App) MessagesComponent {
 	}
 
 	return &messagesComponent{
-		app:                  app,
-		viewport:             vp,
-		showToolDetails:      showToolDetails,
-		showThinkingBlocks:   showThinkingBlocks,
-		cache:                NewPartCache(),
-		tail:                 true,
-		messagePositions:     make(map[string]int),
-		expandedBashCommands: make(map[string]bool),
-		bashViewports:        make(map[string]*viewport.Model),
-		bashCommandZones:     make(map[string]*bashCommandData),
+		app:                   app,
+		viewport:              vp,
+		showToolDetails:       showToolDetails,
+		showThinkingBlocks:    showThinkingBlocks,
+		cache:                 NewPartCache(),
+		tail:                  true,
+		messagePositions:      make(map[string]int),
+		expandedBashCommands:  make(map[string]bool),
+		bashViewports:         make(map[string]*viewport.Model),
+		bashCommandZones:      make(map[string]*bashCommandData),
+		expandedContentBlocks: make(map[string]bool),
+		contentViewports:      make(map[string]*viewport.Model),
 	}
 }

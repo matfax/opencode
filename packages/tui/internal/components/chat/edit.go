@@ -11,22 +11,26 @@ import (
 	"github.com/sst/opencode/internal/styles"
 	"github.com/sst/opencode/internal/theme"
 	"github.com/sst/opencode/internal/util"
+	"github.com/sst/opencode/internal/viewport"
 )
 
-func editSections(metadata map[string]any, toolCall opencode.ToolPart, width int, filename string) []string {
-	var diffContent string
+func editSections(
+	metadata EditMetadata,
+	toolCall opencode.ToolPart,
+	width int,
+	filename string,
+	expandedContentBlocks map[string]bool,
+	contentViewports map[string]*viewport.Model,
+	screenHeight int,
+	messageID string,
+	partIndex int,
+) []string {
+	diffContent := metadata.Diff
 	var shadowDiffContent string
-	var previewLimit = 10
-
-	if val, ok := metadata["diff"].(string); ok {
-		diffContent = val
+	if metadata.ShadowDiff != nil {
+		shadowDiffContent = metadata.ShadowDiff.Diff
 	}
-	if val, ok := metadata["shadowDiff"].(string); ok {
-		shadowDiffContent = val
-	}
-	if val, ok := metadata["previewLines"].(float64); ok && val > 0 {
-		previewLimit = int(val)
-	}
+	const previewLimit = 10
 
 	// Build sections in exact order
 	var sections []string
@@ -35,33 +39,73 @@ func editSections(metadata map[string]any, toolCall opencode.ToolPart, width int
 
 	// Preview section - always show diff when available
 	if diffContent != "" && toolCall.State.Status != opencode.ToolPartStateStatusError {
-		var preview string
-		// Always render as diff, regardless of format
-		var formattedDiff string
-		if width < 120 {
-			formattedDiff, _ = diff.FormatUnifiedDiff(
-				filename,
-				diffContent,
-				diff.WithWidth(width-2),
+		// Check if fullContent is available for expandable rendering
+		fullContent := metadata.FullContent
+		hasFullContent := fullContent != ""
+
+		if hasFullContent {
+			// Use expandable pattern for diff content
+			zoneID := fmt.Sprintf("edit-diff-%s-%d", messageID, partIndex)
+			isExpanded := expandedContentBlocks[zoneID]
+
+			// Format the full diff content
+			var formattedDiff string
+			if width < 120 {
+				formattedDiff, _ = diff.FormatUnifiedDiff(
+					filename,
+					fullContent,
+					diff.WithWidth(width-2),
+				)
+			} else {
+				formattedDiff, _ = diff.FormatDiff(
+					filename,
+					fullContent,
+					diff.WithWidth(width-2),
+				)
+			}
+
+			// Render as expandable content (only the diff section is clickable)
+			expandableContent := renderExpandableContent(
+				zoneID,
+				strings.TrimSpace(formattedDiff),
+				width,
+				"diff",
+				previewLimit,
+				isExpanded,
+				contentViewports,
+				screenHeight,
 			)
+			sections = append(sections, expandableContent)
 		} else {
-			formattedDiff, _ = diff.FormatDiff(
-				filename,
-				diffContent,
-				diff.WithWidth(width-2),
-			)
-		}
-		codeBlock := fmt.Sprintf("```diff\n%s```", strings.TrimSpace(formattedDiff))
-		preview = util.ToMarkdown(codeBlock, width, backgroundColor)
+			// Fallback to original truncated rendering
+			var preview string
+			// Always render as diff, regardless of format
+			var formattedDiff string
+			if width < 120 {
+				formattedDiff, _ = diff.FormatUnifiedDiff(
+					filename,
+					diffContent,
+					diff.WithWidth(width-2),
+				)
+			} else {
+				formattedDiff, _ = diff.FormatDiff(
+					filename,
+					diffContent,
+					diff.WithWidth(width-2),
+				)
+			}
+			codeBlock := fmt.Sprintf("```diff\n%s\n```", strings.TrimSpace(formattedDiff))
+			preview = util.ToMarkdown(codeBlock, width, backgroundColor)
 
-		if previewLimit > 0 {
-			preview = util.TruncateHeight(preview, previewLimit)
-		}
+			if previewLimit > 0 {
+				preview = util.TruncateHeightCenter(preview, previewLimit)
+			}
 
-		if preview != "" {
-			previewStyle := styles.NewStyle().
-				Background(backgroundColor)
-			sections = append(sections, previewStyle.Render(preview))
+			if preview != "" {
+				previewStyle := styles.NewStyle().
+					Background(backgroundColor)
+				sections = append(sections, previewStyle.Render(preview))
+			}
 		}
 	}
 
@@ -78,7 +122,7 @@ func editSections(metadata map[string]any, toolCall opencode.ToolPart, width int
 		)
 
 		shadowHeader := "📋 Requirements Changes:"
-		shadowCodeBlock := fmt.Sprintf("```diff\n%s```", strings.TrimSpace(formattedShadowDiff))
+		shadowCodeBlock := fmt.Sprintf("```diff\n%s\n```", strings.TrimSpace(formattedShadowDiff))
 		shadowPreview := util.ToMarkdown(shadowHeader+"\n"+shadowCodeBlock, width, backgroundColor)
 
 		if shadowPreview != "" {
@@ -106,12 +150,10 @@ func editSections(metadata map[string]any, toolCall opencode.ToolPart, width int
 	if toolCall.State.Status == opencode.ToolPartStateStatusError {
 		hasError = true
 		errorMessage = toolCall.State.Error
-	} else if toolCall.State.Status == opencode.ToolPartStateStatusRunning && metadata != nil {
-		if err, ok := metadata["error"].(string); ok && err != "" {
-			hasError = true
-			errorMessage = err
-			errorColor = t.Warning()
-		}
+	} else if toolCall.State.Status == opencode.ToolPartStateStatusRunning && metadata.Error != "" {
+		hasError = true
+		errorMessage = metadata.Error
+		errorColor = t.Warning()
 	}
 	if hasError && errorMessage != "" {
 		errorStyled := styles.NewStyle().
@@ -122,7 +164,7 @@ func editSections(metadata map[string]any, toolCall opencode.ToolPart, width int
 	}
 
 	// Add diagnostics if available
-	if diagnostics := renderDiagnostics(metadata, filename, backgroundColor, width-6); diagnostics != "" && diagnostics != errorMessage {
+	if diagnostics := renderDiagnostics(metadata.Diagnostics, filename, backgroundColor, width-6); diagnostics != "" && diagnostics != errorMessage {
 		styledDiagnostics := styles.NewStyle().
 			Background(backgroundColor).
 			Foreground(t.TextMuted()).

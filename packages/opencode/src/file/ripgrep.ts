@@ -208,12 +208,18 @@ export namespace Ripgrep {
 
     if (input.glob) {
       for (const g of input.glob) {
-        commands[0] += ` --glob='${g}'`
+        commands[0] += ` --glob=${$.escape(g)}`
       }
     }
 
-    if (input.query) commands.push(`${await Fzf.filepath()} --filter=${input.query}`)
-    if (input.limit) commands.push(`head -n ${input.limit}`)
+    if (input.query) commands.push(`${await Fzf.filepath()} --filter=${$.escape(input.query)}`)
+    if (input.limit) {
+      const limitNum = parseInt(String(input.limit), 10)
+      if (isNaN(limitNum) || limitNum <= 0) {
+        throw new Error(`Invalid limit parameter: ${input.limit}`)
+      }
+      commands.push(`head -n ${limitNum}`)
+    }
     const joined = commands.join(" | ")
     const result = await $`${{ raw: joined }}`.cwd(input.cwd).nothrow().text()
     return result.split("\n").filter(Boolean)

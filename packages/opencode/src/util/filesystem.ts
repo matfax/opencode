@@ -1,5 +1,5 @@
 import { exists } from "fs/promises"
-import { dirname, join, relative } from "path"
+import { dirname, join, relative, extname } from "path"
 
 export namespace Filesystem {
   export function overlaps(a: string, b: string) {
@@ -65,5 +65,32 @@ export namespace Filesystem {
       current = parent
     }
     return result
+  }
+
+  /** Detect programming language from file extension */
+  export function detectLanguage(filePath: string): string {
+    const ext = extname(filePath).toLowerCase()
+    const langMap: Record<string, string> = {
+      ".ts": "typescript",
+      ".tsx": "typescript",
+      ".js": "javascript",
+      ".jsx": "javascript",
+      ".py": "python",
+      ".go": "go",
+      ".rs": "rust",
+      ".java": "java",
+      ".c": "c",
+      ".cpp": "cpp",
+      ".h": "c",
+      ".hpp": "cpp",
+      ".md": "markdown",
+      ".json": "json",
+      ".yaml": "yaml",
+      ".yml": "yaml",
+      ".toml": "toml",
+      ".sh": "bash",
+      ".bash": "bash",
+    }
+    return langMap[ext] || "plaintext"
   }
 }

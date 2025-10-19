@@ -1,3 +1,4 @@
+import { success } from "./metadata"
 import z from "zod/v4"
 import { Tool } from "./tool"
 import path from "path"
@@ -25,7 +26,7 @@ export const LspHoverTool = Tool.define("lsp_hover", {
       metadata: {
         result,
       },
-      output: JSON.stringify(result, null, 2),
+      output: success(JSON.stringify(result, null, 2)),
     }
   },
 })

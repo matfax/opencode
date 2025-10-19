@@ -7,6 +7,7 @@ import { Instance } from "../project/instance"
 import { Shadow } from "../util/shadow"
 import { Agent } from "../agent/agent"
 import { Permission } from "../permission"
+import { success } from "./metadata"
 
 declare const Bun: any
 
@@ -71,7 +72,6 @@ export const RenameTool = Tool.define("rename", {
         messageID: ctx.messageID,
         callID: ctx.callID,
         title: `Rename file: ${relativeOld} → ${relativeNew}`,
-        metadata: { oldPath: oldAbs, newPath: newAbs },
       })
     }
 
@@ -109,7 +109,7 @@ export const RenameTool = Tool.define("rename", {
         oldPath: oldAbs,
         newPath: newAbs,
       },
-      output: `File renamed successfully from ${relativeOld} to ${relativeNew}`,
+      output: success(`File renamed successfully from ${relativeOld} to ${relativeNew}`),
     }
   },
 })

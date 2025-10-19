@@ -68,6 +68,27 @@ func TruncateHeight(content string, height int) string {
 	return content
 }
 
+// TruncateHeightCenter truncates content by removing center lines,
+// showing both start and end with "..." separator
+func TruncateHeightCenter(content string, height int) string {
+	lines := strings.Split(content, "\n")
+	if len(lines) <= height {
+		return content
+	}
+
+	// Calculate how many lines to show at start and end
+	linesPerSide := (height - 1) / 2 // Reserve 1 line for separator
+	startLines := linesPerSide
+	endLines := height - startLines - 1
+
+	result := make([]string, 0, height)
+	result = append(result, lines[:startLines]...)
+	result = append(result, "...")
+	result = append(result, lines[len(lines)-endLines:]...)
+
+	return strings.Join(result, "\n")
+}
+
 func Relative(path string) string {
 	path = strings.TrimPrefix(path, CwdPath+"/")
 	return strings.TrimPrefix(path, RootPath+"/")

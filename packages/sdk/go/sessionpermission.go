@@ -57,7 +57,6 @@ func (r *SessionPermissionService) Respond(ctx context.Context, id string, permi
 type Permission struct {
 	ID        string                 `json:"id,required"`
 	MessageID string                 `json:"messageID,required"`
-	Metadata  map[string]interface{} `json:"metadata,required"`
 	SessionID string                 `json:"sessionID,required"`
 	Time      PermissionTime         `json:"time,required"`
 	Title     string                 `json:"title,required"`
@@ -71,7 +70,6 @@ type Permission struct {
 type permissionJSON struct {
 	ID          apijson.Field
 	MessageID   apijson.Field
-	Metadata    apijson.Field
 	SessionID   apijson.Field
 	Time        apijson.Field
 	Title       apijson.Field

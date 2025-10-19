@@ -1,3 +1,4 @@
+import { success } from "./metadata"
 import z from "zod/v4"
 import { Tool } from "./tool"
 import TurndownService from "turndown"
@@ -45,11 +46,6 @@ export const WebFetchTool = Tool.define("webfetch", {
         messageID: ctx.messageID,
         callID: ctx.callID,
         title: "Fetch content from: " + params.url,
-        metadata: {
-          url: params.url,
-          format: params.format,
-          timeout: params.timeout,
-        },
       })
 
     const timeoutSeconds = Math.min(params.timeout, MAX_TIMEOUT)
@@ -94,13 +90,13 @@ export const WebFetchTool = Tool.define("webfetch", {
         if (contentType.includes("text/html")) {
           const text = await extractTextFromHTML(content)
           return {
-            output: text,
+            output: success(text),
             title,
             metadata: {},
           }
         }
         return {
-          output: content,
+          output: success(content),
           title,
           metadata: {},
         }
@@ -109,20 +105,20 @@ export const WebFetchTool = Tool.define("webfetch", {
         if (contentType.includes("text/html")) {
           const markdown = convertHTMLToMarkdown(content)
           return {
-            output: markdown,
+            output: success(markdown),
             title,
             metadata: {},
           }
         }
         return {
-          output: "```\n" + content + "\n```",
+          output: success("```\n" + content + "\n```"),
           title,
           metadata: {},
         }
 
       case "html":
         return {
-          output: content,
+          output: success(content),
           title,
           metadata: {},
         }
@@ -157,14 +153,14 @@ export const WebFetchTool = Tool.define("webfetch", {
         })
 
         return {
-          output: summaryGen.text,
+          output: success(summaryGen.text),
           title: `Summary: ${params.url}`,
           metadata: {},
         }
 
       default:
         return {
-          output: content,
+          output: success(content),
           title,
           metadata: {},
         }

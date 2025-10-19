@@ -18,93 +18,25 @@
 
 ---
 
-### Installation
+### Purpose of this fork
 
-```bash
-# YOLO
-curl -fsSL https://opencode.ai/install | bash
+This fork's purpose was to investigate different context management and retrieval techniques, including a file-specific natural language-first definition of code context, symbol and vector database storage and retrieval, and the use of multiple LLMs for different tasks, such as code application/integration, summary, and code generation, separate from the agentic supervised coding.
+These techniques were supposed to improve the context size through strict structural enforcement of edit tasks with full file context, dynamic expansion of context through symbol and file content retrieval, and a final review pass to ensure code quality and correctness.
+Unlike subagents defined in natural language, this approach is more strict, naturally enforces LSP protocols, and maintains the relevant context without overloading a primary or subagent model with parallel and crosscutting behavior like git context, documentation context, LSP context, and code quality enforcement.
 
-# Package managers
-npm i -g opencode-ai@latest        # or bun/pnpm/yarn
-brew install sst/tap/opencode      # macOS and Linux
-paru -S opencode-bin               # Arch Linux
-```
+The specific deficiencies of coding agents that this fork aims to address are:
+* Misalignment of many models for diff edit formats
+* Context overload through outdated or irrelevant information, paralleling multiple contexts (git, LSP, documentation, code quality) into a single agent
+* Lack of strict structural enforcement of edit tasks, leading to incomplete or incorrect edits
+* Disregard for the different strengths of different models for different tasks, leading to suboptimal performance
+* Specific model behaviors that are not ideal for coding tasks, such as:
+  * Assuming of context rather than investigating and retrieving context necessary for understanding the problem
+  * Laziness about when a model decides completion of refactoring planning and implementation
+  * Tendency to implement redundant/duplicate non-atomic code due to lack of awareness of potentially duplicate code sections that would be indicated in the same file, if completely read
+  * Forgetfulness of earlier requirements, the tendency to implement features/requirements by discarding earlier ones, lacking the context of user motivation of code sections despite having comments explaining the behavior
 
-> [!TIP]
-> Remove versions older than 0.1.x before installing.
-
-#### Installation Directory
-
-The install script respects the following priority order for the installation path:
-
-1. `$OPENCODE_INSTALL_DIR` - Custom installation directory
-2. `$XDG_BIN_DIR` - XDG Base Directory Specification compliant path
-3. `$HOME/bin` - Standard user binary directory (if exists or can be created)
-4. `$HOME/.opencode/bin` - Default fallback
-
-```bash
-# Examples
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
-```
-
-### Documentation
-
-For more info on how to configure opencode [**head over to our docs**](https://opencode.ai/docs).
-
-### Contributing
-
-opencode is an opinionated tool so any fundamental feature needs to go through a
-design process with the core team.
-
-> [!IMPORTANT]
-> We do not accept PRs for core features.
-
-However we still merge a ton of PRs - you can contribute:
-
-- Bug fixes
-- Improvements to LLM performance
-- Support for new providers
-- Fixes for env specific quirks
-- Missing standard behavior
-- Documentation
-
-Take a look at the git history to see what kind of PRs we end up merging.
-
-> [!NOTE]
-> If you do not follow the above guidelines we might close your PR.
-
-To run opencode locally you need.
-
-- Bun
-- Golang 1.24.x
-
-And run.
-
-```bash
-$ bun install
-$ bun dev
-```
-
-#### Development Notes
-
-**API Client**: After making changes to the TypeScript API endpoints in `packages/opencode/src/server/server.ts`, you will need the opencode team to generate a new stainless sdk for the clients.
-
-### FAQ
-
-#### How is this different than Claude Code?
-
-It's very similar to Claude Code in terms of capability. Here are the key differences:
-
-- 100% open source
-- Not coupled to any provider. Although Anthropic is recommended, opencode can be used with OpenAI, Google or even local models. As models evolve the gaps between them will close and pricing will drop so being provider-agnostic is important.
-- A focus on TUI. opencode is built by neovim users and the creators of [terminal.shop](https://terminal.shop); we are going to push the limits of what's possible in the terminal.
-- A client/server architecture. This for example can allow opencode to run on your computer, while you can drive it remotely from a mobile app. Meaning that the TUI frontend is just one of the possible clients.
-
-#### What's the other repo?
-
-The other confusingly named repo has no relation to this one. You can [read the story behind it here](https://x.com/thdxr/status/1933561254481666466).
-
----
-
-**Join our community** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+The work on this fork was purely exploratory, and will be halted at this point due to architectural deficiencies:
+* Schema-first off-repo upstream definition of SDK
+* Lackluster type safety in TUI and poor understanding of golang best practices, requiring a complete refactoring of the TUI
+* Parallel development of two different frontends (TUI and web) in two different languages, leading to divergence and lack of cohesion, though not necessary for the experiments
+* Testing infrastructure that is only available upstream

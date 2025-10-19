@@ -24,6 +24,12 @@ func renderToolInstructions(toolInputMap map[string]any, toolCall opencode.ToolP
 
 	if val, ok := toolInputMap["instructions"].(string); ok && val != "" {
 		instructionText = val
+	} else if val, ok := toolInputMap["instruction"].(string); ok && val != "" {
+		instructionText = val
+	} else if val, ok := toolInputMap["explanation"].(string); ok && val != "" {
+		instructionText = val
+	} else if val, ok := toolInputMap["motivation"].(string); ok && val != "" {
+		instructionText = val
 	} else if val, ok := toolInputMap["goal"].(string); ok && val != "" {
 		instructionText = val
 	} else if val, ok := toolInputMap["description"].(string); ok && val != "" {

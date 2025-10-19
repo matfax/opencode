@@ -10,14 +10,14 @@ import (
 )
 
 // renderToolStatus renders the status message with animated dots for running tools
-func renderToolStatus(metadata map[string]any, toolCall opencode.ToolPart) string {
+func renderToolStatus(status string, toolCall opencode.ToolPart) string {
 	if toolCall.State.Status != opencode.ToolPartStateStatusRunning {
 		return ""
 	}
 
 	statusMessage := "Starting"
-	if val, ok := metadata["status"].(string); ok && val != "" {
-		statusMessage = val
+	if status != "" {
+		statusMessage = status
 	}
 
 	t := theme.CurrentTheme()

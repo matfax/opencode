@@ -4,6 +4,7 @@ import path from "path"
 import { LSP } from "../lsp"
 import DESCRIPTION from "./lsp-diagnostics.txt"
 import { Instance } from "../project/instance"
+import { success } from "./metadata"
 
 export const LspDiagnosticTool = Tool.define("lsp_diagnostics", {
   description: DESCRIPTION,
@@ -20,7 +21,7 @@ export const LspDiagnosticTool = Tool.define("lsp_diagnostics", {
       metadata: {
         diagnostics,
       },
-      output: file?.length ? file.map(LSP.Diagnostic.pretty).join("\n") : "No errors found",
+      output: success(file?.length ? file.map(LSP.Diagnostic.pretty).join("\n") : "No errors found"),
     }
   },
 })

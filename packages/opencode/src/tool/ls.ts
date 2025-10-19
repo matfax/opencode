@@ -4,6 +4,7 @@ import * as path from "path"
 import DESCRIPTION from "./ls.txt"
 import { Instance } from "../project/instance"
 import { Ripgrep } from "../file/ripgrep"
+import { success } from "./metadata"
 
 export const IGNORE_PATTERNS = [
   "node_modules/",
@@ -103,7 +104,7 @@ export const ListTool = Tool.define("list", {
         count: files.length,
         truncated: files.length >= LIMIT,
       },
-      output,
+      output: success(output),
     }
   },
 })

@@ -3,6 +3,7 @@ import { Tool } from "./tool"
 import DESCRIPTION from "./diff.txt"
 import { $ } from "bun"
 import { Instance } from "../project/instance"
+import { success } from "./metadata"
 
 export const DiffTool = Tool.define("diff", {
   description: DESCRIPTION,
@@ -30,8 +31,8 @@ export const DiffTool = Tool.define("diff", {
     if (project.vcs !== "git") {
       return {
         title: "diff",
-        output: "Version control is not git; diff tool unavailable",
-        metadata: { mode: "disabled", staged: false, unstaged: false, commit: null },
+        output: new Error("Version control is not git; diff tool unavailable"),
+        metadata: { mode: "disabled", staged: false, unstaged: false },
       }
     }
     // quick git availability check (cache not necessary here due to light cost)
@@ -39,8 +40,8 @@ export const DiffTool = Tool.define("diff", {
     if (!gitVersion.trim()) {
       return {
         title: "diff",
-        output: "git executable not found in PATH",
-        metadata: { mode: "disabled", staged: false, unstaged: false, commit: null },
+        output: new Error("git executable not found in PATH"),
+        metadata: { mode: "disabled", staged: false, unstaged: false },
       }
     }
 
@@ -79,8 +80,8 @@ export const DiffTool = Tool.define("diff", {
       title = "combined"
       return {
         title,
-        output,
-        metadata: { mode: "combined", staged: hasStaged, unstaged: hasUnstaged, commit: params.commit ?? null },
+        output: success(output),
+        metadata: { mode: "combined", staged: hasStaged, unstaged: hasUnstaged },
       }
     }
 
@@ -89,27 +90,27 @@ export const DiffTool = Tool.define("diff", {
       const commitDiff = await run`git show --format= ${baseArgs} ${params.commit}`
       output = commitDiff.trim() || `No diff for commit ${params.commit}`
       title = params.commit.slice(0, 12)
-      return { title, output, metadata: { mode: "commit", commit: params.commit, staged: false, unstaged: false } }
+      return { title, output: success(output), metadata: { mode: "commit", staged: false, unstaged: false } }
     }
 
     if (hasUnstaged) {
       const diff = await run`git diff ${baseArgs} ${pathFilter}`
       output = diff.trim() || "No unstaged changes"
       title = "unstaged"
-      return { title, output, metadata: { mode: "unstaged", staged: hasStaged, unstaged: hasUnstaged, commit: null } }
+      return { title, output: success(output), metadata: { mode: "unstaged", staged: hasStaged, unstaged: hasUnstaged } }
     }
 
     if (hasStaged) {
       const diff = await run`git diff --staged ${baseArgs} ${pathFilter}`
       output = diff.trim() || "No staged changes"
       title = "staged"
-      return { title, output, metadata: { mode: "staged", staged: hasStaged, unstaged: hasUnstaged, commit: null } }
+      return { title, output: success(output), metadata: { mode: "staged", staged: hasStaged, unstaged: hasUnstaged } }
     }
 
     // fallback: last commit diff
     const last = await run`git show --format= ${baseArgs} HEAD ${pathFilter}`
     output = last.trim() || "Repository clean and no commits"
     title = "HEAD"
-    return { title, output, metadata: { mode: "head", staged: false, unstaged: false, commit: "HEAD" } }
+    return { title, output: success(output), metadata: { mode: "head", staged: false, unstaged: false } }
   },
 })

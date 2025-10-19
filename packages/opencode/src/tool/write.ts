@@ -1,3 +1,4 @@
+import { success } from "./metadata"
 import z from "zod/v4"
 import * as path from "path"
 import { Tool } from "./tool"
@@ -69,10 +70,9 @@ export const WriteTool = Tool.define("write", {
       title: path.relative(Instance.worktree, filepath),
       metadata: {
         diagnostics,
-        filepath,
-        exists: exists,
+        fullContent: params.content,
       },
-      output,
+      output: success(output),
     }
   },
 })

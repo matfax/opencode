@@ -1,3 +1,4 @@
+import { success } from "../tool/metadata"
 import z from "zod/v4"
 import { Tool } from "../tool/tool"
 import { gatherToolAvailability } from "./tool-availability"
@@ -31,7 +32,7 @@ export const checkCommandAvailability = Tool.define("command-availability", {
         availableTools: toolData.formattedAll,
         requestedTools: params.tools,
       },
-      output: toolData.formattedAll || "No tools checked",
+      output: success(toolData.formattedAll || "No tools checked"),
     }
   },
 })
@@ -75,7 +76,7 @@ export const executeHelp = Tool.define("help", {
         exitCode: process.exitCode || 0,
         originalLength: output.length,
       },
-      output: limitedOutput,
+      output: success(limitedOutput),
     }
   },
 })
@@ -190,7 +191,7 @@ export const BashAgentTools = {
           directory: workingDir,
           exitCode: process.exitCode || 0,
         },
-        output: output || "(No output)",
+        output: success(output || "(No output)"),
       }
     },
   }),

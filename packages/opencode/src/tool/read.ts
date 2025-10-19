@@ -1,3 +1,4 @@
+import { success } from "./metadata"
 import z from "zod/v4"
 import * as fs from "fs"
 import * as path from "path"
@@ -12,6 +13,7 @@ import { Instance } from "../project/instance"
 import { generateText } from "ai"
 import { buildSupportModelParams } from "../session/support-model-params"
 import { Shadow } from "../util/shadow"
+import type { ReadMetadata } from "./metadata"
 
 const DEFAULT_READ_LIMIT = 200
 const MAX_LINE_LENGTH = 2000
@@ -108,12 +110,13 @@ export const ReadTool = Tool.define("read", {
 
       return {
         title: `Summary: ${path.relative(Instance.worktree, filepath)} (${lines.length} lines)`,
-        output: summaryGen.text,
+        output: success(summaryGen.text),
         metadata: {
           preview: lines.slice(0, 20).join("\n"),
-          summarized: true,
+          summarized: true as boolean,
           totalLines: lines.length,
-        },
+          fullContent: fullContent,
+        } satisfies ReadMetadata,
       }
     }
 
@@ -139,12 +142,13 @@ export const ReadTool = Tool.define("read", {
 
     return {
       title: path.relative(Instance.worktree, filepath),
-      output,
+      output: success(output),
       metadata: {
         preview,
-        summarized: false,
+        summarized: false as boolean,
         totalLines: lines.length,
-      },
+        fullContent: raw.join("\n"),
+      } satisfies ReadMetadata,
     }
   },
 })

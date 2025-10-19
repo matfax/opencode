@@ -145,9 +145,18 @@ export const RunCommand = cmd({
       }
 
       let text = ""
+      const childSessions = new Set<string>()
+
+      // Track child sessions as they're created
+      Bus.subscribe(Session.Event.Updated, async (evt) => {
+        if (evt.properties.info.parentID === session.id) {
+          childSessions.add(evt.properties.info.id)
+        }
+      })
 
       Bus.subscribe(MessageV2.Event.PartUpdated, async (evt) => {
-        if (evt.properties.part.sessionID !== session.id) return
+        // Accept parts from parent session or any child sessions
+        if (evt.properties.part.sessionID !== session.id && !childSessions.has(evt.properties.part.sessionID)) return
         if (evt.properties.part.messageID === messageID) return
         const part = evt.properties.part
 
@@ -181,7 +190,7 @@ export const RunCommand = cmd({
       let errorMsg: string | undefined
       Bus.subscribe(Session.Event.Error, async (evt) => {
         const { sessionID, error } = evt.properties
-        if (sessionID !== session.id || !error) return
+        if (!sessionID || (sessionID !== session.id && !childSessions.has(sessionID)) || !error) return
         let err = String(error.name)
 
         if ("data" in error && error.data && "message" in error.data) {

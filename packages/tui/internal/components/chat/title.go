@@ -103,6 +103,9 @@ func renderToolTitle[N constraints.Float | constraints.Integer](
 		title = getTodoTitle(toolCall)
 	case "todoread":
 		return "Plan"
+	case "createrequirements", "updaterequirements":
+		// These tools use explanation/motivation in instructions.go, don't show params in title
+		title = renderToolName(toolCall.Tool)
 	case "invalid":
 		if actualTool, ok := toolArgsMap["tool"].(string); ok {
 			title = renderToolName(actualTool)
@@ -202,7 +205,7 @@ func renderArgs(args *map[string]any, titleKey string) string {
 			title = fmt.Sprintf("%s", value)
 			continue
 		}
-		if key == "prompt" || key == "content" || key == "url" || key == "instructions" || key == "description" || key == "query" || key == "goal" {
+		if key == "prompt" || key == "content" || key == "url" || key == "instructions" || key == "description" || key == "query" || key == "goal" || key == "explanation" || key == "motivation" || key == "symbols" || key == "instruction" || key == "code" {
 			continue
 		}
 		if key == "command" {
@@ -227,6 +230,10 @@ func renderToolName(name string) string {
 		return "Fetch"
 	case "invalid":
 		return "Invalid"
+	case "createrequirements":
+		return "Create Requirements Document"
+	case "updaterequirements":
+		return "Update Requirements Document"
 	default:
 		normalizedName := name
 		if after, ok := strings.CutPrefix(name, "opencode_"); ok {

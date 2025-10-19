@@ -167,7 +167,6 @@ export async function handleDiagnosticsAndFileWrite(
         title:
           title ??
           `${permissionType === "edit" ? "Edit" : "Write"} this file: ${absolutePath}${lspUnavailable ? " (LSP unavailable)" : ""}${hasShadowRemovals ? " (requirements changed)" : ""}`,
-        metadata: { filePath: absolutePath, diff, lspUnavailable, shadowDiff },
         ...((lspUnavailable || hasShadowRemovals) && { strict: true }),
       })
     }

@@ -1,3 +1,4 @@
+import { success } from "./metadata"
 import z from "zod/v4"
 import { Tool } from "./tool"
 import DESCRIPTION_WRITE from "./todowrite.txt"
@@ -28,7 +29,7 @@ export const TodoWriteTool = Tool.define("todowrite", {
     todos[opts.sessionID] = params.todos
     return {
       title: `${params.todos.filter((x) => x.status !== "completed").length} todos`,
-      output: JSON.stringify(params.todos, null, 2),
+      output: success(JSON.stringify(params.todos, null, 2)),
       metadata: {
         todos: params.todos,
       },
@@ -46,7 +47,7 @@ export const TodoReadTool = Tool.define("todoread", {
       metadata: {
         todos,
       },
-      output: JSON.stringify(todos, null, 2),
+      output: success(JSON.stringify(todos, null, 2)),
     }
   },
 })

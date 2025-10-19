@@ -4,6 +4,7 @@ import { Ripgrep } from "../file/ripgrep"
 
 import DESCRIPTION from "./grep.txt"
 import { Instance } from "../project/instance"
+import { success } from "./metadata"
 
 const DEFAULT_EXPIRATION = 5 // expire after 5 messages
 
@@ -45,7 +46,7 @@ export const GrepTool = Tool.define("grep", {
       return {
         title: params.pattern,
         metadata: { matches: 0, truncated: false },
-        output: "No files found",
+        output: success("No files found"),
       }
     }
 
@@ -87,7 +88,7 @@ export const GrepTool = Tool.define("grep", {
       return {
         title: params.pattern,
         metadata: { matches: 0, truncated: false },
-        output: "No files found",
+        output: success("No files found"),
       }
     }
 
@@ -116,7 +117,7 @@ export const GrepTool = Tool.define("grep", {
         matches: finalMatches.length,
         truncated,
       },
-      output: outputLines.join("\n"),
+      output: success(outputLines.join("\n")),
     }
   },
 })

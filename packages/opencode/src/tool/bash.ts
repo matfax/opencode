@@ -2,6 +2,7 @@ import z from "zod/v4"
 import { exec } from "child_process"
 
 import { Tool } from "./tool"
+import { success } from "./metadata"
 import DESCRIPTION from "./bash.txt"
 // @ts-ignore
 import BASH_CONSTRUCT_TEMPLATE from "./support/bash.txt"
@@ -358,9 +359,11 @@ async function handleAgenticMode(params: any, ctx: any) {
     metadata: {
       steps,
     },
-    output: steps
-      .map((s) => (s.type === "command" ? `$ ${s.text}\n(exit code: ${s.exitCode ?? "pending"})` : s.text))
-      .join("\n"),
+    output: success(
+      steps
+        .map((s) => (s.type === "command" ? `$ ${s.text}\n(exit code: ${s.exitCode ?? "pending"})` : s.text))
+        .join("\n")
+    ),
   }
 }
 
@@ -404,7 +407,7 @@ export const BashTool = Tool.define("bash", {
           ],
           status: res.exitCode === 0 ? "Completed" : "Failed",
         },
-        output: res.output + `\n\n(exit code: ${res.exitCode})`,
+        output: success(res.output + `\n\n(exit code: ${res.exitCode})`),
       }
     }
 

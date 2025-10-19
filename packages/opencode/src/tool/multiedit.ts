@@ -1,3 +1,4 @@
+import { success } from "./metadata"
 import z from "zod/v4"
 import { Tool } from "./tool"
 import DESCRIPTION from "./multiedit.txt"
@@ -151,7 +152,7 @@ export const MultiEditTool = Tool.define("multiedit", {
           return {
             title: "multiedit",
             metadata: { results: [] as any[], expanded: false, expansionLog: [], summary: lastReport },
-            output: lastReport || "No changes",
+            output: success(lastReport || "No changes"),
           }
         break
       }
@@ -240,7 +241,6 @@ export const MultiEditTool = Tool.define("multiedit", {
             messageID: ctx.messageID,
             callID: ctx.callID,
             title: `Rename file: ${absPath} -> ${targetAbs}`,
-            metadata: { filePath: absPath, to: targetAbs, action },
           })
         }
         await fs.mkdir(path.dirname(targetAbs), { recursive: true }).catch(() => {})
@@ -274,6 +274,6 @@ export const MultiEditTool = Tool.define("multiedit", {
 
     const summary =
       lastReport || (expanded ? "Multi-file edits applied (context expanded)" : "Multi-file edits applied")
-    return { title: "multiedit", metadata: { results, expanded: !!expanded, expansionLog, summary }, output: summary }
+    return { title: "multiedit", metadata: { results, expanded: !!expanded, expansionLog, summary }, output: success(summary) }
   },
 })

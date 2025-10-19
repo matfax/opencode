@@ -6,9 +6,8 @@ import { Filesystem } from "../util/filesystem"
 import { Instance } from "../project/instance"
 import { Agent } from "../agent/agent"
 import { Permission } from "../permission"
-import { createTwoFilesPatch } from "diff"
-import { trimDiff } from "../util/apply"
 import { Shadow } from "../util/shadow"
+import { success } from "./metadata"
 
 declare const Bun: any
 
@@ -25,18 +24,15 @@ export const RemoveTool = Tool.define("remove", {
     const st = await f.stat().catch(() => null)
     if (!st) throw new Error("File not found")
     if (st.isDirectory()) throw new Error("Path is a directory, not a file")
-    const original = await f.text()
 
     const agent = await Agent.get(ctx.agent)
     if (agent?.permission.edit === "ask") {
-      const diff = trimDiff(createTwoFilesPatch(abs, abs, original, ""))
       await Permission.ask({
         type: "write",
         sessionID: ctx.sessionID,
         messageID: ctx.messageID,
         callID: ctx.callID,
         title: "Delete file: " + abs,
-        metadata: { filePath: abs, diff },
       })
     }
 
@@ -68,7 +64,7 @@ export const RemoveTool = Tool.define("remove", {
     return {
       title: path.relative(Instance.worktree, abs),
       metadata: { filePath: abs, deleted },
-      output: deleted ? "File removed" : "File removal attempted (could not confirm)",
+      output: success(deleted ? "File removed" : "File removal attempted (could not confirm)"),
     }
   },
 })

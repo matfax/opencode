@@ -13,38 +13,14 @@ import (
 	"github.com/sst/opencode/internal/viewport"
 )
 
-func bashSections(metadata map[string]any, toolCall opencode.ToolPart, toolInputMap map[string]any, width int, messageID string, partIndex int, expandedCommands map[string]bool, viewports map[string]*viewport.Model) ([]string, map[string]*bashCommandData) {
+func bashSections(metadata BashMetadata, toolCall opencode.ToolPart, toolInputMap map[string]any, width int, messageID string, partIndex int, expandedCommands map[string]bool, viewports map[string]*viewport.Model) ([]string, map[string]*bashCommandData) {
 	var sections []string
 	bashData := make(map[string]*bashCommandData)
 	t := theme.CurrentTheme()
 	backgroundColor := t.BackgroundPanel()
 
 	// 1. Command list with outputs from steps array
-	type Step struct {
-		Text     string `json:"text"`
-		ExitCode *int   `json:"exitCode,omitempty"`
-		Type     string `json:"type"`
-	}
-
-	var steps []Step
-	if stepsRaw, ok := metadata["steps"].([]any); ok {
-		for _, s := range stepsRaw {
-			if stepMap, ok := s.(map[string]any); ok {
-				step := Step{Type: "text-delta"}
-				if text, ok := stepMap["text"].(string); ok {
-					step.Text = text
-				}
-				if stepType, ok := stepMap["type"].(string); ok {
-					step.Type = stepType
-				}
-				if exitCode, ok := stepMap["exitCode"].(float64); ok {
-					exitCodeInt := int(exitCode)
-					step.ExitCode = &exitCodeInt
-				}
-				steps = append(steps, step)
-			}
-		}
-	}
+	steps := metadata.Steps
 
 	// Fallback: If no steps available yet, prefill with command from toolInputMap
 	if len(steps) == 0 {
@@ -57,14 +33,7 @@ func bashSections(metadata map[string]any, toolCall opencode.ToolPart, toolInput
 	}
 
 	// Get command outputs from metadata
-	commandData := make(map[string]map[string]any)
-	if cmds, ok := metadata["commands"].(map[string]any); ok {
-		for cmd, data := range cmds {
-			if dataMap, ok := data.(map[string]any); ok {
-				commandData[cmd] = dataMap
-			}
-		}
-	}
+	commandData := metadata.Commands
 
 	var reasoningBuilder strings.Builder
 	flushReasoning := func() {
@@ -108,12 +77,9 @@ func bashSections(metadata map[string]any, toolCall opencode.ToolPart, toolInput
 		var isExecuting bool
 
 		if data, ok := commandData[cmd]; ok {
-			if out, ok := data["output"].(string); ok {
-				cliOutput = out
-			}
-			if ec, ok := data["exitCode"].(float64); ok {
-				exitCodeInt := int(ec)
-				exitCode = &exitCodeInt
+			cliOutput = data.Output
+			if data.ExitCode != 0 || cliOutput != "" {
+				exitCode = &data.ExitCode
 			} else {
 				isExecuting = true
 			}

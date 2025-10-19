@@ -1,3 +1,4 @@
+import { success } from "./metadata"
 import z from "zod/v4"
 import { BashTool } from "./bash"
 import { checkCommandAvailability, executeHelp, BashAgentTools } from "../util/bash-agent-tools"
@@ -129,7 +130,7 @@ export namespace ToolRegistry {
         const json = (await res.json()) as { title?: string; output: string; metadata?: Record<string, any> }
         return {
           title: json.title ?? input.id,
-          output: json.output ?? "",
+          output: success(json.output ?? ""),
           metadata: (json.metadata ?? {}) as any,
         }
       },

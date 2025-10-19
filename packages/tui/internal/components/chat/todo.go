@@ -1,23 +1,20 @@
 package chat
 
-import "github.com/sst/opencode-sdk-go"
+import (
+	"github.com/sst/opencode-sdk-go"
+)
 
-func getTodoPhase(metadata map[string]any) string {
-	todos, ok := metadata["todos"].([]any)
-	if !ok || len(todos) == 0 {
+func getTodoPhase(metadata TodoMetadata) string {
+	if len(metadata.Todos) == 0 {
 		return "Plan"
 	}
 
 	counts := map[string]int{"pending": 0, "completed": 0}
-	for _, item := range todos {
-		if todo, ok := item.(map[string]any); ok {
-			if status, ok := todo["status"].(string); ok {
-				counts[status]++
-			}
-		}
+	for _, todo := range metadata.Todos {
+		counts[todo.Status]++
 	}
 
-	total := len(todos)
+	total := len(metadata.Todos)
 	switch {
 	case counts["pending"] == total:
 		return "Creating plan"
@@ -29,10 +26,16 @@ func getTodoPhase(metadata map[string]any) string {
 }
 
 func getTodoTitle(toolCall opencode.ToolPart) string {
-	if toolCall.State.Status == opencode.ToolPartStateStatusCompleted {
-		if metadata, ok := toolCall.State.Metadata.(map[string]any); ok {
-			return getTodoPhase(metadata)
-		}
+	// Try to unmarshal metadata
+	typedMetadata, err := UnmarshalToolMetadata(toolCall.Tool, toolCall.State.Metadata)
+	if err != nil {
+		return "Plan"
 	}
+
+	// Type assert to TodoMetadata
+	if todoMeta, ok := typedMetadata.(TodoMetadata); ok {
+		return getTodoPhase(todoMeta)
+	}
+
 	return "Plan"
 }

@@ -1,4 +1,5 @@
 import { Tool } from "./tool"
+import { success } from "./metadata"
 import DESCRIPTION from "./task.txt"
 import z from "zod/v4"
 import { Session } from "../session"
@@ -80,7 +81,8 @@ export const TaskTool = Tool.define("task", async () => {
         metadata: {
           summary: result.parts.filter((x: any) => x.type === "tool"),
         },
-        output: (result.parts.findLast((x: any) => x.type === "text") as any)?.text ?? "",
+        output: success((result.parts.findLast((x: any) => x.type === "text") as any)?.text ?? ""),
+        childSessionID: session.id,
       }
     },
   }

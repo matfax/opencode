@@ -3,6 +3,7 @@ import { GlobTool } from "../../src/tool/glob"
 import { ListTool } from "../../src/tool/ls"
 import path from "path"
 import { Instance } from "../../src/project/instance"
+import { serializeOutput } from "../../src/tool/metadata"
 
 const ctx = {
   sessionID: "test",
@@ -55,7 +56,8 @@ describe("tool.ls", () => {
     })
 
     // Normalize absolute path to relative for consistent snapshots
-    const normalizedOutput = result.output.replace(fixturePath, "packages/opencode/test/fixtures/example")
+    const outputStr = serializeOutput(result.output)
+    const normalizedOutput = outputStr.replace(fixturePath, "packages/opencode/test/fixtures/example")
     expect(normalizedOutput).toMatchSnapshot()
   })
 })

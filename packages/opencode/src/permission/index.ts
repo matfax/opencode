@@ -27,7 +27,6 @@ export namespace Permission {
       messageID: z.string(),
       callID: z.string().optional(),
       title: z.string(),
-      metadata: z.record(z.string(), z.any()),
       time: z.object({
         created: z.number(),
       }),
@@ -71,7 +70,7 @@ export namespace Permission {
     async (state) => {
       for (const pending of Object.values(state.pending)) {
         for (const item of Object.values(pending)) {
-          item.reject(new RejectedError(item.info.sessionID, item.info.id, item.info.callID, item.info.metadata))
+          item.reject(new RejectedError(item.info.sessionID, item.info.id, item.info.callID))
         }
       }
     },
@@ -84,7 +83,6 @@ export namespace Permission {
     callID?: Info["callID"]
     sessionID: Info["sessionID"]
     messageID: Info["messageID"]
-    metadata: Info["metadata"]
     strict?: boolean
   }) {
     const { pending, approved } = state()
@@ -107,7 +105,6 @@ export namespace Permission {
       messageID: input.messageID,
       callID: input.callID,
       title: input.title,
-      metadata: input.metadata,
       time: {
         created: Date.now(),
       },
@@ -119,7 +116,7 @@ export namespace Permission {
       }).then((x) => x.status)
     ) {
       case "deny":
-        throw new RejectedError(info.sessionID, info.id, info.callID, info.metadata)
+        throw new RejectedError(info.sessionID, info.id, info.callID)
       case "allow":
         return
     }
@@ -161,7 +158,6 @@ export namespace Permission {
             input.sessionID,
             input.permissionID,
             match.info.callID,
-            match.info.metadata,
             input.reason,
           )
           break
@@ -170,7 +166,6 @@ export namespace Permission {
             input.sessionID,
             input.permissionID,
             match.info.callID,
-            match.info.metadata,
             input.reason,
           )
           break
@@ -179,7 +174,6 @@ export namespace Permission {
             input.sessionID,
             input.permissionID,
             match.info.callID,
-            match.info.metadata,
             input.reason,
           )
           break
@@ -188,7 +182,6 @@ export namespace Permission {
             input.sessionID,
             input.permissionID,
             match.info.callID,
-            match.info.metadata,
             input.reason,
           )
           break
@@ -197,7 +190,6 @@ export namespace Permission {
             input.sessionID,
             input.permissionID,
             match.info.callID,
-            match.info.metadata,
             input.reason,
           )
       }
@@ -234,7 +226,6 @@ export namespace Permission {
       public readonly sessionID: string,
       public readonly permissionID: string,
       public readonly toolCallID?: string,
-      public readonly metadata?: Record<string, any>,
       public readonly reason?: string,
       rejectType?: RejectReason,
     ) {
@@ -252,11 +243,10 @@ export namespace Permission {
       sessionID: string,
       permissionID: string,
       toolCallID?: string,
-      metadata?: Record<string, any>,
       customReason?: string,
     ) {
       const message = `The user rejected this due to a syntax error. ${customReason || "Please fix the syntax and try again."}`
-      super(sessionID, permissionID, toolCallID, metadata, message, "syntax")
+      super(sessionID, permissionID, toolCallID, message, "syntax")
       this.name = "RejectedSyntaxError"
     }
   }
@@ -266,11 +256,10 @@ export namespace Permission {
       sessionID: string,
       permissionID: string,
       toolCallID?: string,
-      metadata?: Record<string, any>,
       customReason?: string,
     ) {
       const message = `The user rejected this approach. ${customReason || "The user agrees with the intent but wants a different implementation approach. Do not retry the same approach."}`
-      super(sessionID, permissionID, toolCallID, metadata, message, "approach")
+      super(sessionID, permissionID, toolCallID, message, "approach")
       this.name = "RejectedApproachError"
     }
   }
@@ -280,11 +269,10 @@ export namespace Permission {
       sessionID: string,
       permissionID: string,
       toolCallID?: string,
-      metadata?: Record<string, any>,
       customReason?: string,
     ) {
       const message = `The user rejected this intent. ${customReason || "Do not pursue this direction or similar approaches. The user does not want this functionality."}`
-      super(sessionID, permissionID, toolCallID, metadata, message, "intent")
+      super(sessionID, permissionID, toolCallID, message, "intent")
       this.name = "RejectedIntentError"
     }
   }
@@ -294,11 +282,10 @@ export namespace Permission {
       sessionID: string,
       permissionID: string,
       toolCallID?: string,
-      metadata?: Record<string, any>,
       customReason?: string,
     ) {
       const message = customReason || "The user rejected permission to use this specific tool call."
-      super(sessionID, permissionID, toolCallID, metadata, message, "custom")
+      super(sessionID, permissionID, toolCallID, message, "custom")
       this.name = "RejectedCustomError"
     }
   }

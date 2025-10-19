@@ -3,7 +3,6 @@ package chat
 import (
 	"encoding/json"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -462,6 +461,9 @@ func renderToolDetails(
 	partIndex int,
 	expandedBashCommands map[string]bool,
 	bashViewports map[string]*viewport.Model,
+	expandedContentBlocks map[string]bool,
+	contentViewports map[string]*viewport.Model,
+	screenHeight int,
 ) string {
 	measure := util.Measure("chat.renderToolDetails")
 	defer measure("tool", toolCall.Tool)
@@ -518,19 +520,54 @@ func renderToolDetails(
 
 	}
 
-	if permission.Metadata != nil {
-		metadata, ok := toolCall.State.Metadata.(map[string]any)
-		if metadata == nil || !ok {
-			metadata = map[string]any{}
+	// Unmarshal metadata into typed struct
+	typedMetadata, err := UnmarshalToolMetadata(toolCall.Tool, toolCall.State.Metadata)
+	if err != nil {
+		// Handle error - show error message
+		errorContent := styles.NewStyle().
+			Background(backgroundColor).
+			Foreground(t.Error()).
+			Render(fmt.Sprintf("Failed to unmarshal tool metadata: %v", err))
+		body = errorContent
+	} else {
+		// Extract status from BaseMetadata for crosscutting concern
+		var status string
+		switch m := typedMetadata.(type) {
+		case ReadMetadata:
+			status = m.Status
+		case SymbolMetadata:
+			status = m.Status
+		case GrepMetadata:
+			status = m.Status
+		case GlobMetadata:
+			status = m.Status
+		case BashMetadata:
+			status = m.Status
+		case EditMetadata:
+			status = m.Status
+		case ReviewMetadata:
+			status = m.Status
+		case WriteMetadata:
+			status = m.Status
+		case PredictMetadata:
+			status = m.Status
+		case CreateRequirementsMetadata:
+			status = m.Status
+		case UpdateRequirementsMetadata:
+			status = m.Status
+		case TodoMetadata:
+			status = m.Status
+		case TaskMetadata:
+			status = m.Status
+		case DiffMetadata:
+			status = m.Status
+		case BaseMetadata:
+			status = m.Status
 		}
-		maps.Copy(metadata, permission.Metadata)
-		toolCall.State.Metadata = metadata
-	}
 
-	if metadata, ok := toolCall.State.Metadata.(map[string]any); ok {
 		// Render status for running tools (crosscutting concern)
-		if status := renderToolStatus(metadata, toolCall); status != "" {
-			body = status + "\n\n"
+		if statusText := renderToolStatus(status, toolCall); statusText != "" {
+			body = statusText + "\n\n"
 		}
 
 		// Render instructions/goal/description for running tools (crosscutting concern)
@@ -538,32 +575,109 @@ func renderToolDetails(
 			body += instructions + "\n\n"
 		}
 
-		switch toolCall.Tool {
-		case "read":
-			var preview any
-			if metadata != nil {
-				preview = metadata["preview"]
-			}
-			if preview != nil && toolInputMap["filePath"] != nil {
+		// Type switch on metadata instead of string switch on tool name
+		switch metadata := typedMetadata.(type) {
+		case ReadMetadata:
+			// Check for fullContent first (new expandable pattern)
+			if metadata.FullContent != "" && toolInputMap["filePath"] != nil {
 				filename := toolInputMap["filePath"].(string)
-				body += preview.(string)
+				language := util.Extension(filename)
+				zoneID := fmt.Sprintf("content-%s-%d", messageID, partIndex)
+				isExpanded := expandedContentBlocks != nil && expandedContentBlocks[zoneID]
+				body += renderExpandableContent(
+					zoneID,
+					metadata.FullContent,
+					width,
+					language,
+					6, // truncHeight for collapsed state
+					isExpanded,
+					contentViewports,
+					screenHeight,
+				)
+			} else if metadata.Preview != "" && toolInputMap["filePath"] != nil {
+				// Fallback to old preview pattern
+				filename := toolInputMap["filePath"].(string)
+				body += metadata.Preview
 				body = util.RenderFile(filename, body, width, util.WithTruncate(6))
 			}
-		case "edit":
+		case EditMetadata:
 			if filename, ok := toolInputMap["filePath"].(string); ok {
-				sections := editSections(metadata, toolCall, width, filename)
+				sections := editSections(metadata, toolCall, width, filename, expandedContentBlocks, contentViewports, screenHeight, messageID, partIndex)
 				body += strings.Join(sections, "\n\n")
 			}
-		case "write":
+		case PredictMetadata:
 			if filename, ok := toolInputMap["filePath"].(string); ok {
-				if content, ok := toolInputMap["content"].(string); ok {
+				// Check for fullContent first (new expandable pattern)
+				if metadata.FullContent != "" {
+					// Determine language based on format field
+					language := ""
+					if metadata.Format == "Diff" {
+						language = "diff"
+					} else {
+						language = util.Extension(filename)
+					}
+
+					zoneID := fmt.Sprintf("content-%s-%d", messageID, partIndex)
+					isExpanded := expandedContentBlocks != nil && expandedContentBlocks[zoneID]
+					body += renderExpandableContent(
+						zoneID,
+						metadata.FullContent,
+						width,
+						language,
+						10, // truncHeight for collapsed state
+						isExpanded,
+						contentViewports,
+						screenHeight,
+					)
+
+					// Still render diagnostics and error messages from predictSections
+					if diagnostics := renderDiagnostics(metadata.Diagnostics, filename, backgroundColor, width-6); diagnostics != "" {
+						body += "\n\n" + diagnostics
+					}
+				} else {
+					// Fallback to old pattern
+					sections := predictSections(metadata, toolCall, width, filename)
+					body += strings.Join(sections, "\n\n")
+				}
+			}
+		case ReviewMetadata:
+			sections := reviewSections(metadata, toolCall, width)
+			body += strings.Join(sections, "\n\n")
+		case SymbolMetadata:
+			sections := symbolSections(metadata, toolCall, width)
+			body += strings.Join(sections, "\n\n")
+		case CreateRequirementsMetadata:
+			sections := createRequirementsSections(metadata, toolCall, width)
+			body += strings.Join(sections, "\n\n")
+		case WriteMetadata:
+			if filename, ok := toolInputMap["filePath"].(string); ok {
+				// Check for fullContent first (new expandable pattern)
+				if metadata.FullContent != "" {
+					language := util.Extension(filename)
+					zoneID := fmt.Sprintf("content-%s-%d", messageID, partIndex)
+					isExpanded := expandedContentBlocks != nil && expandedContentBlocks[zoneID]
+					body += renderExpandableContent(
+						zoneID,
+						metadata.FullContent,
+						width,
+						language,
+						6, // truncHeight for collapsed state
+						isExpanded,
+						contentViewports,
+						screenHeight,
+					)
+					if diagnostics := renderDiagnostics(metadata.Diagnostics, filename, backgroundColor, width-4); diagnostics != "" {
+						body += "\n\n" + diagnostics
+					}
+				} else if content, ok := toolInputMap["content"].(string); ok {
+					// Fallback to old pattern
 					body += util.RenderFile(filename, content, width)
-					if diagnostics := renderDiagnostics(metadata, filename, backgroundColor, width-4); diagnostics != "" {
+					if diagnostics := renderDiagnostics(metadata.Diagnostics, filename, backgroundColor, width-4); diagnostics != "" {
 						body += "\n\n" + diagnostics
 					}
 				}
 			}
-		case "bash":
+		case BashMetadata:
 			sections, bashData := bashSections(metadata, toolCall, toolInputMap, width, messageID, partIndex, expandedBashCommands, bashViewports)
 			body += strings.Join(sections, "\n\n")
 			// Thread bash command data back to messagesComponent for click handling
@@ -572,44 +686,38 @@ func renderToolDetails(
 					(*bashCommandZones)[cmd] = data
 				}
 			}
-		case "webfetch":
-			if format, ok := toolInputMap["format"].(string); ok && result != nil {
-				body = *result
-				body = util.TruncateHeight(body, 10)
-				if format == "html" || format == "markdown" {
-					body = util.ToMarkdown(body, width, backgroundColor)
-				}
-			}
-		case "todowrite":
-			todos := metadata["todos"]
-			if todos != nil {
-				for _, item := range todos.([]any) {
-					todo := item.(map[string]any)
-					content := todo["content"]
-					if content == nil {
-						continue
-					}
-					switch todo["status"] {
-					case "completed":
-						body += fmt.Sprintf("- [x] %s\n", content)
-					case "cancelled":
-						// strike through cancelled todo
-						body += fmt.Sprintf("- [ ] ~~%s~~\n", content)
-					case "in_progress":
-						// highlight in progress todo
-						body += fmt.Sprintf("- [ ] `%s`\n", content)
-					default:
-						body += fmt.Sprintf("- [ ] %s\n", content)
+		case BaseMetadata:
+			// webfetch and other tools that use BaseMetadata
+			if toolCall.Tool == "webfetch" {
+				if format, ok := toolInputMap["format"].(string); ok && result != nil {
+					body = *result
+					body = util.TruncateHeight(body, 10)
+					if format == "html" || format == "markdown" {
+						body = util.ToMarkdown(body, width, backgroundColor)
 					}
 				}
-				body = util.ToMarkdown(body, width, backgroundColor)
 			}
-		case "task":
-			summary := metadata["summary"]
-			if summary != nil {
-				toolcalls := summary.([]any)
+		case TodoMetadata:
+			for _, todo := range metadata.Todos {
+				content := todo.Content
+				switch todo.Status {
+				case "completed":
+					body += fmt.Sprintf("- [x] %s\n", content)
+				case "cancelled":
+					// strike through cancelled todo
+					body += fmt.Sprintf("- [ ] ~~%s~~\n", content)
+				case "in_progress":
+					// highlight in progress todo
+					body += fmt.Sprintf("- [ ] `%s`\n", content)
+				default:
+					body += fmt.Sprintf("- [ ] %s\n", content)
+				}
+			}
+			body = util.ToMarkdown(body, width, backgroundColor)
+		case TaskMetadata:
+			if len(metadata.Summary) > 0 {
 				steps := []string{}
-				for _, item := range toolcalls {
+				for _, item := range metadata.Summary {
 					data, _ := json.Marshal(item)
 					var toolCall opencode.ToolPart
 					_ = json.Unmarshal(data, &toolCall)
@@ -643,9 +751,17 @@ func renderToolDetails(
 				empty := ""
 				result = &empty
 			}
-			body = *result
-			body = util.TruncateHeight(body, 10)
-			body = defaultStyle(body)
+			// Universal output rendering with automatic expansion for code/diff
+			body = renderUniversalOutput(
+				*result,
+				toolCall,
+				messageID,
+				partIndex,
+				width,
+				expandedContentBlocks,
+				contentViewports,
+				screenHeight,
+			)
 		}
 	}
 
@@ -669,9 +785,17 @@ func renderToolDetails(
 	}
 
 	if body == "" && error == "" && result != nil {
-		body = *result
-		body = util.TruncateHeight(body, 10)
-		body = defaultStyle(body)
+		// Universal output rendering with automatic expansion for code/diff
+		body = renderUniversalOutput(
+			*result,
+			toolCall,
+			messageID,
+			partIndex,
+			width,
+			expandedContentBlocks,
+			contentViewports,
+			screenHeight,
+		)
 	}
 
 	if body == "" {

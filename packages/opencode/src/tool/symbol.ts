@@ -1,3 +1,4 @@
+import { success } from "./metadata"
 import z from "zod/v4"
 import path from "path"
 import { Tool } from "./tool"
@@ -166,9 +167,10 @@ export const SymbolTool = Tool.define("symbol", {
       if (updatedState.clients.length === 0) {
         return {
           title: args.name,
-          metadata: { count: 0, fuzzy: !!args.fuzzy, error: "no_lsp" },
-          output:
+          metadata: { count: 0, error: "no_lsp" },
+          output: success(
             "No LSP servers are configured or running. Symbol search requires a language server for the target file type. Please configure an LSP server in your opencode configuration.",
+          ),
         }
       }
     }
@@ -273,10 +275,9 @@ export const SymbolTool = Tool.define("symbol", {
       title: args.name,
       metadata: {
         count: results.length,
-        fuzzy: !!args.fuzzy,
         ...(lspState.clients.length === 0 ? { error: "no_lsp" } : {}),
       },
-      output,
+      output: success(output),
     }
   },
 })

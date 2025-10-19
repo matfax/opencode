@@ -48,7 +48,7 @@ export namespace BashPermissions {
       toolContext?: string
     } = {},
   ) {
-    const { description, agentName = ctx.agent, toolContext } = options
+    const { description, agentName = ctx.agent } = options
 
     const tree = await parser().then((p) => p.parse(command))
     const permissions = await Agent.get(agentName).then((x) => x.permission.bash)
@@ -136,13 +136,6 @@ export namespace BashPermissions {
         messageID: ctx.messageID,
         callID: ctx.callID,
         title,
-        metadata: {
-          command,
-          description,
-          patterns,
-          agentName,
-          toolContext,
-        },
       })
     }
   }
