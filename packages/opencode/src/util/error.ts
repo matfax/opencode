@@ -64,7 +64,7 @@ export abstract class NamedError extends Error {
 export function extractAISDKErrorMessage(err: any, context: string): string {
   if (err?.responseBody) {
     try {
-      const body = typeof err.responseBody === 'string' ? JSON.parse(err.responseBody) : err.responseBody
+      const body = typeof err.responseBody === "string" ? JSON.parse(err.responseBody) : err.responseBody
       return `${context}: ${body.error?.message || body.message || JSON.stringify(body)}`
     } catch {
       return `${context}: ${String(err.responseBody)}`

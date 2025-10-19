@@ -161,7 +161,7 @@ export namespace Shadow {
   export function createTemplate(
     sourcePath: string,
     motivation?: string,
-    symbols?: Array<{ name: string; purpose: string; requirements?: string[] }>
+    symbols?: Array<{ name: string; purpose: string; requirements?: string[] }>,
   ): string {
     const relativePath = path.relative(Instance.directory, sourcePath)
     const purposeText = motivation || "Purpose and motivation for this file."
@@ -170,9 +170,10 @@ export namespace Shadow {
     if (symbols && symbols.length > 0) {
       symbolSections = symbols
         .map((sym) => {
-          const requirementsList = sym.requirements && sym.requirements.length > 0
-            ? "\n\n" + sym.requirements.map((req) => `- ${req}`).join("\n")
-            : ""
+          const requirementsList =
+            sym.requirements && sym.requirements.length > 0
+              ? "\n\n" + sym.requirements.map((req) => `- ${req}`).join("\n")
+              : ""
           return `\n\n## ${sym.name}\n\n${sym.purpose}${requirementsList}`
         })
         .join("")

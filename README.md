@@ -25,18 +25,20 @@ These techniques were supposed to improve the context size through strict struct
 Unlike subagents defined in natural language, this approach is more strict, naturally enforces LSP protocols, and maintains the relevant context without overloading a primary or subagent model with parallel and crosscutting behavior like git context, documentation context, LSP context, and code quality enforcement.
 
 The specific deficiencies of coding agents that this fork aims to address are:
-* Misalignment of many models for diff edit formats
-* Context overload through outdated or irrelevant information, paralleling multiple contexts (git, LSP, documentation, code quality) into a single agent
-* Lack of strict structural enforcement of edit tasks, leading to incomplete or incorrect edits
-* Disregard for the different strengths of different models for different tasks, leading to suboptimal performance
-* Specific model behaviors that are not ideal for coding tasks, such as:
-  * Assuming of context rather than investigating and retrieving context necessary for understanding the problem
-  * Laziness about when a model decides completion of refactoring planning and implementation
-  * Tendency to implement redundant/duplicate non-atomic code due to lack of awareness of potentially duplicate code sections that would be indicated in the same file, if completely read
-  * Forgetfulness of earlier requirements, the tendency to implement features/requirements by discarding earlier ones, lacking the context of user motivation of code sections despite having comments explaining the behavior
+
+- Misalignment of many models for diff edit formats
+- Context overload through outdated or irrelevant information, paralleling multiple contexts (git, LSP, documentation, code quality) into a single agent
+- Lack of strict structural enforcement of edit tasks, leading to incomplete or incorrect edits
+- Disregard for the different strengths of different models for different tasks, leading to suboptimal performance
+- Specific model behaviors that are not ideal for coding tasks, such as:
+  - Assuming of context rather than investigating and retrieving context necessary for understanding the problem
+  - Laziness about when a model decides completion of refactoring planning and implementation
+  - Tendency to implement redundant/duplicate non-atomic code due to lack of awareness of potentially duplicate code sections that would be indicated in the same file, if completely read
+  - Forgetfulness of earlier requirements, the tendency to implement features/requirements by discarding earlier ones, lacking the context of user motivation of code sections despite having comments explaining the behavior
 
 The work on this fork was purely exploratory, and will be halted at this point due to architectural deficiencies:
-* Schema-first off-repo upstream definition of SDK
-* Lackluster type safety in TUI and poor understanding of golang best practices, requiring a complete refactoring of the TUI
-* Parallel development of two different frontends (TUI and web) in two different languages, leading to divergence and lack of cohesion, though not necessary for the experiments
-* Testing infrastructure that is only available upstream
+
+- Schema-first off-repo upstream definition of SDK
+- Lackluster type safety in TUI and poor understanding of golang best practices, requiring a complete refactoring of the TUI
+- Parallel development of two different frontends (TUI and web) in two different languages, leading to divergence and lack of cohesion, though not necessary for the experiments
+- Testing infrastructure that is only available upstream

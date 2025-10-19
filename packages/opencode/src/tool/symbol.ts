@@ -144,11 +144,7 @@ export const SymbolTool = Tool.define("symbol", {
       .describe("Include full function/method body instead of just signature")
       .optional()
       .default(true),
-    includeShadow: z
-      .boolean()
-      .describe("Include code requirements for this symbol")
-      .optional()
-      .default(true),
+    includeShadow: z.boolean().describe("Include code requirements for this symbol").optional().default(true),
   }),
   key: (p) => {
     return ["symbol", p.name].join("|")

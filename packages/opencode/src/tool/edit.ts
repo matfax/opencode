@@ -68,7 +68,9 @@ async function createEditAgentTools(
     read: tool(await Tool.toAISDKTool(ReadTool, ctx, { omitParams: ["query"] })),
     grep: tool(await Tool.toAISDKTool(GrepTool, ctx)),
     glob: tool(await Tool.toAISDKTool(GlobTool, ctx)),
-    symbol: tool(await Tool.toAISDKTool(SymbolTool, ctx, { omitParams: ["autorefresh"], defaultParams: { includeShadow: false } })),
+    symbol: tool(
+      await Tool.toAISDKTool(SymbolTool, ctx, { omitParams: ["autorefresh"], defaultParams: { includeShadow: false } }),
+    ),
     updateRequirements: tool({
       description:
         "Update shadow file requirements with a unified diff. Works for both existing shadows and iterative updates after createRequirements.",
@@ -77,7 +79,9 @@ async function createEditAgentTools(
           shadowDiff: z.string().describe("Unified diff for shadow file changes (old vs new shadow content)"),
         }),
       ),
-      execute: async ({ shadowDiff }): Promise<{
+      execute: async ({
+        shadowDiff,
+      }): Promise<{
         output: ToolOutput
         metadata: UpdateRequirementsMetadata
       }> => {
@@ -107,7 +111,7 @@ async function createEditAgentTools(
               messageID: ctx.messageID,
               callID: ctx.callID,
               title: `Update requirements for: ${filePath}${hasShadowRemovals ? " (requirements removed)" : ""}`,
-              ...((hasShadowRemovals) && { strict: true }),
+              ...(hasShadowRemovals && { strict: true }),
             })
           }
 
@@ -116,7 +120,9 @@ async function createEditAgentTools(
           shadowContentRef.approved = true
 
           const result: { output: ToolOutput; metadata: UpdateRequirementsMetadata } = {
-            output: success("Requirements updated and approved. Shadow file will be written after successful file write."),
+            output: success(
+              "Requirements updated and approved. Shadow file will be written after successful file write.",
+            ),
             metadata: {
               shadowDiff: { diff: shadowDiff },
             },
@@ -138,13 +144,16 @@ async function createEditAgentTools(
                 name: z.string().describe("Symbol name (class, function, interface, enum - no variables)"),
                 purpose: z.string().describe("Why this symbol exists and what it does"),
                 requirements: z.array(z.string()).optional().describe("Specific requirements for this symbol"),
-              })
+              }),
             )
             .optional()
             .describe("Symbols in the file with their purposes and requirements"),
         }),
       ),
-      execute: async ({ motivation, symbols }): Promise<{
+      execute: async ({
+        motivation,
+        symbols,
+      }): Promise<{
         output: ToolOutput
         metadata: CreateRequirementsMetadata
       }> => {
@@ -217,14 +226,19 @@ async function createEditAgentTools(
             ),
         }),
       ),
-      execute: async ({ code, instruction }): Promise<{
+      execute: async ({
+        code,
+        instruction,
+      }): Promise<{
         output: ToolOutput
         metadata: PredictMetadata
       }> => {
         // Check if max consecutive failures reached
         if (failureState.maxFailuresReached) {
           const result: { output: ToolOutput; metadata: PredictMetadata } = {
-            output: new Error(`Maximum consecutive failures (${MAX_CONSECUTIVE_FAILURES}) reached. Please use reject tool to explain what went wrong.`),
+            output: new Error(
+              `Maximum consecutive failures (${MAX_CONSECUTIVE_FAILURES}) reached. Please use reject tool to explain what went wrong.`,
+            ),
             metadata: {},
           }
           return result
@@ -273,7 +287,7 @@ async function createEditAgentTools(
               output: new Error(
                 currentFormatRef.format === Template.Format.Snippet
                   ? "Apply model failed to integrate the snippet - no changes resulted"
-                  : "Diff did not result in any changes"
+                  : "Diff did not result in any changes",
               ),
               metadata: { content, fullContent: serializeContent(content) },
             }
@@ -512,7 +526,6 @@ export const EditTool = Tool.define<
       content: `// File: ${path.relative(Instance.directory, filePath)}\n${contentOld}`,
     })
     if (params.relevantFiles) {
-
       for (const rel of params.relevantFiles) {
         try {
           const abs = path.isAbsolute(rel) ? rel : path.join(Instance.directory, rel)
@@ -554,13 +567,7 @@ export const EditTool = Tool.define<
     )
 
     // Build system prompt using the template
-    const supportConfig = await buildSupportModelParams(
-      "edit",
-      ctx.agent,
-      EDIT_TEMPLATE,
-      ctx.sessionID,
-      filePath,
-    )
+    const supportConfig = await buildSupportModelParams("edit", ctx.agent, EDIT_TEMPLATE, ctx.sessionID, filePath)
     const supportParams = supportConfig.params
     const systemMessages = supportConfig.systemMessages
     const supportModelInfo = supportConfig.modelInfo
@@ -577,7 +584,12 @@ export const EditTool = Tool.define<
     // Assemble messages, injecting shadow content if it exists
     const shadowMessage = shadowContent
       ? [{ role: "user" as const, content: `## Code Requirements\n\`\`\`markdown\n${shadowContent}\n\`\`\`` }]
-      : [{ role: "user" as const, content: `## Code Requirements\n\nNo requirements documentation exists yet for this file. Use the createRequirements tool if you want to document this code.` }]
+      : [
+          {
+            role: "user" as const,
+            content: `## Code Requirements\n\nNo requirements documentation exists yet for this file. Use the createRequirements tool if you want to document this code.`,
+          },
+        ]
     const messages = [...substitutedSystemMessages, ...shadowMessage, ...fileMessages, finalUser]
 
     // Update status: calling agentic edit model
@@ -703,11 +715,11 @@ export const EditTool = Tool.define<
                   result.metadata?.diagnostics &&
                   Object.values(result.metadata.diagnostics).some((diags: any) => diags && diags.length > 0)
                 // Also check if the output message indicates failure
-                const isFailureMessage = result.output && (
-                  result.output.includes("failed") ||
-                  result.output.includes("error") ||
-                  result.output.includes("did not result in any changes")
-                )
+                const isFailureMessage =
+                  result.output &&
+                  (result.output.includes("failed") ||
+                    result.output.includes("error") ||
+                    result.output.includes("did not result in any changes"))
 
                 if (hasErrors || isFailureMessage) {
                   lastApplyError = result.output

@@ -55,7 +55,11 @@ export namespace Tool {
     /** Custom parameter schema transformer */
     transformParams?: (schema: z.ZodType) => z.ZodType
     /** Custom result mapper */
-    mapResult?: (result: { title: string; metadata: M; output: ToolOutput }) => { output: ToolOutput; metadata: Partial<M>; title?: string }
+    mapResult?: (result: { title: string; metadata: M; output: ToolOutput }) => {
+      output: ToolOutput
+      metadata: Partial<M>
+      title?: string
+    }
     /** Default parameter values to merge with provided params */
     defaultParams?: Record<string, any>
   }

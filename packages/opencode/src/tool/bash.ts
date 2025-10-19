@@ -244,107 +244,107 @@ async function handleAgenticMode(params: any, ctx: any) {
 
   try {
     for await (const chunk of stream.fullStream) {
-    ctx.abort.throwIfAborted?.()
+      ctx.abort.throwIfAborted?.()
 
-    switch (chunk.type) {
-      case "text-delta":
-        // Check if the text contains a retry-after JSON structure (rate limit)
-        try {
-          const parsed = JSON.parse(chunk.text)
-          if (parsed["retry-after"]) {
-            throw new Error("Rate limit encountered during agentic bash execution")
+      switch (chunk.type) {
+        case "text-delta":
+          // Check if the text contains a retry-after JSON structure (rate limit)
+          try {
+            const parsed = JSON.parse(chunk.text)
+            if (parsed["retry-after"]) {
+              throw new Error("Rate limit encountered during agentic bash execution")
+            }
+          } catch (e) {
+            // Not JSON or doesn't contain retry-after, continue normally
+            if (e instanceof Error && e.message.includes("Rate limit")) {
+              throw e
+            }
           }
-        } catch (e) {
-          // Not JSON or doesn't contain retry-after, continue normally
-          if (e instanceof Error && e.message.includes("Rate limit")) {
-            throw e
-          }
-        }
-
-        steps.push({
-          text: chunk.text,
-          type: "text-delta",
-        })
-        ctx.metadata({
-          metadata: {
-            steps,
-            status: "Thinking",
-          },
-        })
-        break
-
-      case "tool-call":
-        if (chunk.toolName === "execute_cli") {
-          const command = (chunk.input as any).command
 
           steps.push({
-            text: command,
-            type: "command",
+            text: chunk.text,
+            type: "text-delta",
           })
-
           ctx.metadata({
             metadata: {
               steps,
-              lastCommand: command,
-              status: "Executing",
+              status: "Thinking",
             },
           })
-        }
-        break
+          break
 
-      case "tool-result":
-        if (chunk.toolName === "execute_cli") {
-          try {
-            const parsed = JSON.parse(chunk.output as string)
+        case "tool-call":
+          if (chunk.toolName === "execute_cli") {
             const command = (chunk.input as any).command
 
-            // Set status code of last command or push new step
-            if (
-              steps.length > 0 &&
-              steps[steps.length - 1].type === "command" &&
-              steps[steps.length - 1].text === command
-            ) {
-              steps[steps.length - 1].exitCode = parsed.exitCode
-            } else {
-              steps.push({
-                text: command,
-                exitCode: parsed.exitCode,
-                type: "command",
-              })
-            }
+            steps.push({
+              text: command,
+              type: "command",
+            })
 
             ctx.metadata({
               metadata: {
                 steps,
                 lastCommand: command,
-                lastExitCode: parsed.exitCode,
+                status: "Executing",
               },
             })
-
-            // Track failures
-            if (parsed.exitCode !== 0) {
-              fails++
-              if (fails >= maxFail) {
-                toolState.maxFailuresReached = true
-              }
-            } else {
-              fails = 0
-              toolState.maxFailuresReached = false
-            }
-
-            // Stream progress
-            ctx.metadata({
-              metadata: {
-                attempt: fails + 1,
-              },
-            })
-          } catch (e) {
-            // Ignore parse errors
           }
-        }
-        break
+          break
+
+        case "tool-result":
+          if (chunk.toolName === "execute_cli") {
+            try {
+              const parsed = JSON.parse(chunk.output as string)
+              const command = (chunk.input as any).command
+
+              // Set status code of last command or push new step
+              if (
+                steps.length > 0 &&
+                steps[steps.length - 1].type === "command" &&
+                steps[steps.length - 1].text === command
+              ) {
+                steps[steps.length - 1].exitCode = parsed.exitCode
+              } else {
+                steps.push({
+                  text: command,
+                  exitCode: parsed.exitCode,
+                  type: "command",
+                })
+              }
+
+              ctx.metadata({
+                metadata: {
+                  steps,
+                  lastCommand: command,
+                  lastExitCode: parsed.exitCode,
+                },
+              })
+
+              // Track failures
+              if (parsed.exitCode !== 0) {
+                fails++
+                if (fails >= maxFail) {
+                  toolState.maxFailuresReached = true
+                }
+              } else {
+                fails = 0
+                toolState.maxFailuresReached = false
+              }
+
+              // Stream progress
+              ctx.metadata({
+                metadata: {
+                  attempt: fails + 1,
+                },
+              })
+            } catch (e) {
+              // Ignore parse errors
+            }
+          }
+          break
+      }
     }
-  }
   } catch (err: any) {
     // Handle streaming errors during bash execution
     const errorMessage = err?.responseBody
@@ -362,7 +362,7 @@ async function handleAgenticMode(params: any, ctx: any) {
     output: success(
       steps
         .map((s) => (s.type === "command" ? `$ ${s.text}\n(exit code: ${s.exitCode ?? "pending"})` : s.text))
-        .join("\n")
+        .join("\n"),
     ),
   }
 }

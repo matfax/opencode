@@ -15,17 +15,14 @@ export const WriteTool = Tool.define("write", {
   parameters: z.object({
     filePath: z.string().describe("Path to the file to write"),
     content: z.string().describe("The content to write to the file"),
-    motivation: z
-      .string()
-      .optional()
-      .describe("Brief description of file purpose and goals (for new code files only)"),
+    motivation: z.string().optional().describe("Brief description of file purpose and goals (for new code files only)"),
     symbols: z
       .array(
         z.object({
           name: z.string().describe("Symbol name (class, function, interface, enum - no variables)"),
           purpose: z.string().describe("Why this symbol exists and what it does"),
           requirements: z.array(z.string()).optional().describe("Specific requirements for this symbol"),
-        })
+        }),
       )
       .optional()
       .describe("Symbols in the file with their purposes and requirements (for new code files only)"),

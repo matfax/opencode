@@ -34,12 +34,10 @@ export interface SessionStreamOptions<TResult, TTools extends Record<string, AIT
   }
 }
 
-export type SessionStreamChunk<TResult, TTools extends Record<string, AITool> = Record<string, AITool>> = (SessionStreamOptions<
+export type SessionStreamChunk<
   TResult,
-  TTools
->["stream"]["fullStream"] extends AsyncIterable<infer T>
-  ? T
-  : never) & {
+  TTools extends Record<string, AITool> = Record<string, AITool>,
+> = (SessionStreamOptions<TResult, TTools>["stream"]["fullStream"] extends AsyncIterable<infer T> ? T : never) & {
   type: string
   [key: string]: unknown
 }
@@ -207,9 +205,7 @@ export async function processSessionStream<TResult, TTools extends Record<string
           }
         }
         const normalizedOutput =
-          typeof toolOutput.output === "string"
-            ? toolOutput.output
-            : JSON.stringify(toolOutput.output ?? "")
+          typeof toolOutput.output === "string" ? toolOutput.output : JSON.stringify(toolOutput.output ?? "")
         await Session.updatePart({
           ...match,
           state: {

@@ -39,7 +39,7 @@ export async function createReviewTool(
     inputSchema: zodSchema(
       z.object({
         explanation: z.string().describe("Context and motivation for the code and shadow changes"),
-      })
+      }),
     ),
     execute: async ({ explanation }): Promise<any> => {
       // Get the predicted FileDiff
@@ -59,17 +59,30 @@ export async function createReviewTool(
         read: tool(await Tool.toAISDKTool(ReadTool, ctx, { omitParams: ["query"] })),
         grep: tool(await Tool.toAISDKTool(GrepTool, ctx)),
         glob: tool(await Tool.toAISDKTool(GlobTool, ctx)),
-        symbol: tool(await Tool.toAISDKTool(SymbolTool, ctx, { omitParams: ["autorefresh"], defaultParams: { includeShadow: false } })),
+        symbol: tool(
+          await Tool.toAISDKTool(SymbolTool, ctx, {
+            omitParams: ["autorefresh"],
+            defaultParams: { includeShadow: false },
+          }),
+        ),
         finalize: tool({
-          description: "Finalize the review with validation results (the only way to complete review successfully). Provide your detailed review summary in natural text AFTER calling this tool.",
+          description:
+            "Finalize the review with validation results (the only way to complete review successfully). Provide your detailed review summary in natural text AFTER calling this tool.",
           inputSchema: zodSchema(
             z.object({
               passed: z.boolean().describe("Whether the review passed (true) or failed (false)"),
               summary: z.string().optional().describe("Fallback summary if you don't provide text after this call"),
-              suggestions: z.string().optional().describe("Fallback suggestions if review failed and you don't provide text after this call"),
+              suggestions: z
+                .string()
+                .optional()
+                .describe("Fallback suggestions if review failed and you don't provide text after this call"),
             }),
           ),
-          execute: async ({ passed, summary, suggestions }): Promise<{
+          execute: async ({
+            passed,
+            summary,
+            suggestions,
+          }): Promise<{
             output: ToolOutput
             metadata: { passed: boolean; fallbackSummary?: string; fallbackSuggestions?: string }
           }> => {
@@ -213,7 +226,11 @@ export async function createReviewTool(
               try {
                 const result = typeof chunk.output === "string" ? JSON.parse(chunk.output) : chunk.output
                 // Extract finalize metadata (passed status and fallback text)
-                finalizeMetadata = result.metadata as { passed: boolean; fallbackSummary?: string; fallbackSuggestions?: string }
+                finalizeMetadata = result.metadata as {
+                  passed: boolean
+                  fallbackSummary?: string
+                  fallbackSuggestions?: string
+                }
                 ctx.metadata({
                   metadata: {
                     status: finalizeMetadata.passed ? "Review passed" : "Review failed",
@@ -296,7 +313,10 @@ export async function createReviewTool(
       const summary = assistantText.trim() || finalizeMetadata.fallbackSummary || "Review completed"
 
       const result: { output: ToolOutput; metadata: ReviewMetadata } = {
-        output: success(summary + (finalizeMetadata.fallbackSuggestions ? `\n\nSuggestions: ${finalizeMetadata.fallbackSuggestions}` : "")),
+        output: success(
+          summary +
+            (finalizeMetadata.fallbackSuggestions ? `\n\nSuggestions: ${finalizeMetadata.fallbackSuggestions}` : ""),
+        ),
         metadata: {
           passed: finalizeMetadata.passed,
           summary,

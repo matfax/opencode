@@ -154,44 +154,19 @@ export namespace Permission {
       let error: RejectedError
       switch (input.rejectType) {
         case "syntax":
-          error = new RejectedSyntaxError(
-            input.sessionID,
-            input.permissionID,
-            match.info.callID,
-            input.reason,
-          )
+          error = new RejectedSyntaxError(input.sessionID, input.permissionID, match.info.callID, input.reason)
           break
         case "approach":
-          error = new RejectedApproachError(
-            input.sessionID,
-            input.permissionID,
-            match.info.callID,
-            input.reason,
-          )
+          error = new RejectedApproachError(input.sessionID, input.permissionID, match.info.callID, input.reason)
           break
         case "intent":
-          error = new RejectedIntentError(
-            input.sessionID,
-            input.permissionID,
-            match.info.callID,
-            input.reason,
-          )
+          error = new RejectedIntentError(input.sessionID, input.permissionID, match.info.callID, input.reason)
           break
         case "custom":
-          error = new RejectedCustomError(
-            input.sessionID,
-            input.permissionID,
-            match.info.callID,
-            input.reason,
-          )
+          error = new RejectedCustomError(input.sessionID, input.permissionID, match.info.callID, input.reason)
           break
         default:
-          error = new RejectedError(
-            input.sessionID,
-            input.permissionID,
-            match.info.callID,
-            input.reason,
-          )
+          error = new RejectedError(input.sessionID, input.permissionID, match.info.callID, input.reason)
       }
       match.reject(error)
       return
@@ -239,12 +214,7 @@ export namespace Permission {
   }
 
   export class RejectedSyntaxError extends RejectedError {
-    constructor(
-      sessionID: string,
-      permissionID: string,
-      toolCallID?: string,
-      customReason?: string,
-    ) {
+    constructor(sessionID: string, permissionID: string, toolCallID?: string, customReason?: string) {
       const message = `The user rejected this due to a syntax error. ${customReason || "Please fix the syntax and try again."}`
       super(sessionID, permissionID, toolCallID, message, "syntax")
       this.name = "RejectedSyntaxError"
@@ -252,12 +222,7 @@ export namespace Permission {
   }
 
   export class RejectedApproachError extends RejectedError {
-    constructor(
-      sessionID: string,
-      permissionID: string,
-      toolCallID?: string,
-      customReason?: string,
-    ) {
+    constructor(sessionID: string, permissionID: string, toolCallID?: string, customReason?: string) {
       const message = `The user rejected this approach. ${customReason || "The user agrees with the intent but wants a different implementation approach. Do not retry the same approach."}`
       super(sessionID, permissionID, toolCallID, message, "approach")
       this.name = "RejectedApproachError"
@@ -265,12 +230,7 @@ export namespace Permission {
   }
 
   export class RejectedIntentError extends RejectedError {
-    constructor(
-      sessionID: string,
-      permissionID: string,
-      toolCallID?: string,
-      customReason?: string,
-    ) {
+    constructor(sessionID: string, permissionID: string, toolCallID?: string, customReason?: string) {
       const message = `The user rejected this intent. ${customReason || "Do not pursue this direction or similar approaches. The user does not want this functionality."}`
       super(sessionID, permissionID, toolCallID, message, "intent")
       this.name = "RejectedIntentError"
@@ -278,12 +238,7 @@ export namespace Permission {
   }
 
   export class RejectedCustomError extends RejectedError {
-    constructor(
-      sessionID: string,
-      permissionID: string,
-      toolCallID?: string,
-      customReason?: string,
-    ) {
+    constructor(sessionID: string, permissionID: string, toolCallID?: string, customReason?: string) {
       const message = customReason || "The user rejected permission to use this specific tool call."
       super(sessionID, permissionID, toolCallID, message, "custom")
       this.name = "RejectedCustomError"

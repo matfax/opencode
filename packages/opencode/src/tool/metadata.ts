@@ -23,7 +23,7 @@ export class TextOutput implements ToolOutput {
 export class CodeOutput implements ToolOutput {
   constructor(
     private readonly code: string,
-    private readonly language: string
+    private readonly language: string,
   ) {}
 
   serialize(): string {

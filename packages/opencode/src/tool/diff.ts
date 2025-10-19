@@ -97,7 +97,11 @@ export const DiffTool = Tool.define("diff", {
       const diff = await run`git diff ${baseArgs} ${pathFilter}`
       output = diff.trim() || "No unstaged changes"
       title = "unstaged"
-      return { title, output: success(output), metadata: { mode: "unstaged", staged: hasStaged, unstaged: hasUnstaged } }
+      return {
+        title,
+        output: success(output),
+        metadata: { mode: "unstaged", staged: hasStaged, unstaged: hasUnstaged },
+      }
     }
 
     if (hasStaged) {
